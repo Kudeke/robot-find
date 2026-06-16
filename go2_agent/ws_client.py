@@ -3,7 +3,8 @@ import uuid
 
 import websockets
 
-from protocol import make_heartbeat, make_robot_state, parse_message, validate_message
+from odom_source import MockOdomSource
+from protocol import make_heartbeat, make_odom, make_robot_state, parse_message, validate_message
 from state_source import MockStateSource
 
 
@@ -16,7 +17,9 @@ class WebSocketClient:
         self.seq = 0
         self.connection_id = uuid.uuid4().hex
         self.state_source = MockStateSource()
+        self.odom_source = MockOdomSource()
         self.robot_state_interval_sec = 1.0
+        self.odom_interval_sec = 0.1
         self._stopping = False
 
     async def run_forever(self):
@@ -49,10 +52,11 @@ class WebSocketClient:
     async def _run_connected(self, websocket):
         sender = asyncio.create_task(self._heartbeat_loop(websocket))
         state_sender = asyncio.create_task(self._robot_state_loop(websocket))
+        odom_sender = asyncio.create_task(self._odom_loop(websocket))
         receiver = asyncio.create_task(self._receive_loop(websocket))
         try:
             done, pending = await asyncio.wait(
-                {sender, state_sender, receiver},
+                {sender, state_sender, odom_sender, receiver},
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for task in done:
@@ -60,10 +64,16 @@ class WebSocketClient:
                 if exc:
                     raise exc
         finally:
-            for task in (sender, state_sender, receiver):
+            for task in (sender, state_sender, odom_sender, receiver):
                 if not task.done():
                     task.cancel()
-            await asyncio.gather(sender, state_sender, receiver, return_exceptions=True)
+            await asyncio.gather(
+                sender,
+                state_sender,
+                odom_sender,
+                receiver,
+                return_exceptions=True,
+            )
 
     def _next_seq(self):
         self.seq += 1
@@ -85,6 +95,15 @@ class WebSocketClient:
             await websocket.send(message)
             print(f"[GO2] send robot_state seq={seq}")
             await asyncio.sleep(self.robot_state_interval_sec)
+
+    async def _odom_loop(self, websocket):
+        while not self._stopping:
+            seq = self._next_seq()
+            odom = self.odom_source.get_odom()
+            message = make_odom(seq, self.connection_id, odom)
+            await websocket.send(message)
+            print(f"[GO2] send odom seq={seq}")
+            await asyncio.sleep(self.odom_interval_sec)
 
     async def _receive_loop(self, websocket):
         async for raw in websocket:

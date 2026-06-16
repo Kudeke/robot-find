@@ -6,11 +6,11 @@ from protocol import make_heartbeat_ack, parse_message, validate_message
 
 
 class WebSocketServer:
-    def __init__(self, config, state_publisher=None):
+    def __init__(self, config, ros2_bridge=None):
         self.host = config.get("host", "0.0.0.0")
         self.port = int(config.get("port", 8765))
         self.path = config.get("path", "/go2")
-        self.state_publisher = state_publisher
+        self.ros2_bridge = ros2_bridge
         self.server = None
         self.message_counter = 0
 
@@ -49,6 +49,8 @@ class WebSocketServer:
                         await self._handle_heartbeat(websocket, remote_ip, msg)
                     elif msg_type == "robot_state":
                         self._handle_robot_state(remote_ip, msg)
+                    elif msg_type == "odom":
+                        self._handle_odom(remote_ip, msg)
                     else:
                         raise ValueError(f"unsupported message type: {msg_type}")
                 except Exception as exc:
@@ -79,12 +81,24 @@ class WebSocketServer:
         timestamp_ns = msg["timestamp_ns"]
         connection_id = msg.get("connection_id", "unknown")
         payload = msg["payload"]
-        if self.state_publisher is not None:
-            self.state_publisher.publish_state(payload)
+        if self.ros2_bridge is not None:
+            self.ros2_bridge.publish_state(payload)
         print(
             f"[HOST] robot_state from {remote_ip} "
             f"seq={seq} timestamp_ns={timestamp_ns} "
             f"connection_id={connection_id} "
+            f"total_messages={self.message_counter}"
+        )
+
+    def _handle_odom(self, remote_ip, msg):
+        validate_message(msg, expected_type="odom")
+        seq = msg["seq"]
+        payload = msg["payload"]
+        if self.ros2_bridge is not None:
+            self.ros2_bridge.publish_odom(payload)
+        print(
+            f"[HOST] odom from {remote_ip} "
+            f"seq={seq} "
             f"total_messages={self.message_counter}"
         )
 

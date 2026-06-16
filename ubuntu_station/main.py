@@ -3,7 +3,7 @@ import sys
 
 import yaml
 
-from ros2_bridge.go2_state_publisher import Go2StatePublisher
+from ros2_bridge.ros2_bridge import Ros2Bridge
 from ws_server import WebSocketServer
 
 
@@ -14,13 +14,13 @@ def load_config(path="config.yaml"):
 
 async def async_main():
     config = load_config()
-    state_publisher = Go2StatePublisher()
-    server = WebSocketServer(config, state_publisher=state_publisher)
+    ros2_bridge = Ros2Bridge()
+    server = WebSocketServer(config, ros2_bridge=ros2_bridge)
     try:
         await server.run_forever()
     finally:
         await server.close()
-        state_publisher.close()
+        ros2_bridge.close()
 
 
 def main():

@@ -37,6 +37,18 @@ def make_robot_state(seq, connection_id, state):
     return json.dumps(message, separators=(",", ":"))
 
 
+def make_odom(seq, connection_id, odom):
+    message = {
+        "type": "odom",
+        "version": VERSION,
+        "seq": int(seq),
+        "timestamp_ns": now_ns(),
+        "connection_id": str(connection_id),
+        "payload": dict(odom),
+    }
+    return json.dumps(message, separators=(",", ":"))
+
+
 def parse_message(raw):
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8")

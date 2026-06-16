@@ -77,3 +77,67 @@ Expected message data is a JSON string:
 ```
 
 `rclpy` is provided by ROS2 Jazzy and is intentionally not listed in `requirements.txt`.
+
+## Phase1-C Mock Odom + TF
+
+Ubuntu terminal 1:
+
+```bash
+cd ~/go2wireless_webrct/ubuntu_station
+./run_station.sh
+```
+
+GO2:
+
+```bash
+cd ~/go2wireless_webrct/go2_agent
+python3 main.py
+```
+
+Ubuntu terminal 2:
+
+```bash
+cd ~/go2wireless_webrct/ubuntu_station
+./echo_odom.sh
+```
+
+Expected output contains:
+
+```text
+header:
+  frame_id: odom
+child_frame_id: base_link
+pose:
+  pose:
+    position:
+      x: ...
+twist:
+  twist:
+    linear:
+      x: 0.05
+```
+
+Ubuntu terminal 3:
+
+```bash
+cd ~/go2wireless_webrct/ubuntu_station
+./check_tf.sh
+```
+
+Expected output contains:
+
+```text
+At time ...
+- Translation: [...]
+- Rotation: in Quaternion (xyzw) [...]
+```
+
+RViz2:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+rviz2
+```
+
+Set `Fixed Frame` to `odom`, add `TF`, add `Odometry`, and set the
+Odometry topic to `/remote/odom`.

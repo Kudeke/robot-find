@@ -6,6 +6,7 @@ __pycache__/
 venv/
 env/
 log/
+unitree@*/
 
 .DS_Store
 .idea/
