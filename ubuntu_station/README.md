@@ -7,10 +7,21 @@ This project does not use ROS2, Unitree SDK2, OpenCV, camera input, or robot con
 ## Run on Ubuntu
 
 ```bash
-cd ubuntu_station
-source /opt/ros/jazzy/setup.bash
+cd ~/go2wireless_webrct/ubuntu_station
+./run_station.sh
+```
+
+Keep this terminal running.
+
+The launcher sources ROS2 Jazzy and uses the project-local virtual environment
+if one exists at `venv/` or `.venv/`. If no virtual environment exists yet,
+create one with:
+
+```bash
+cd ~/go2wireless_webrct/ubuntu_station
+python3 -m venv --system-site-packages venv
+source venv/bin/activate
 pip install -r requirements.txt
-python3 main.py
 ```
 
 Dependencies are pinned for the Phase1-A runtime:
@@ -55,8 +66,8 @@ ws://<ubuntu_ip>:8765/go2
 After starting Ubuntu Station and GO2 Agent, verify the ROS2 topic:
 
 ```bash
-source /opt/ros/jazzy/setup.bash
-ros2 topic echo /go2/state
+cd ~/go2wireless_webrct/ubuntu_station
+./echo_state.sh
 ```
 
 Expected message data is a JSON string:
