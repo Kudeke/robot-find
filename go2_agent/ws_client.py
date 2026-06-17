@@ -1,10 +1,15 @@
 import asyncio
+import time
 import uuid
 
 import websockets
 
+from controller import DryRunController, SafeController
+from imu_source import MockImuSource
+from native_stop_controller import NativeStopController
 from odom_source import MockOdomSource
-from protocol import make_heartbeat, make_odom, make_robot_state, parse_message, validate_message
+from protocol import make_heartbeat, make_imu, make_odom, make_robot_state, parse_message, validate_message
+from safety import SafetyLimiter
 from state_source import MockStateSource
 
 
@@ -18,8 +23,31 @@ class WebSocketClient:
         self.connection_id = uuid.uuid4().hex
         self.state_source = MockStateSource()
         self.odom_source = MockOdomSource()
+        self.imu_source = MockImuSource()
+        self.safety_limiter = SafetyLimiter(
+            max_vx=config.get("max_vx", 0.5),
+            max_vy=config.get("max_vy", 0.3),
+            max_yaw_rate=config.get("max_yaw_rate", 0.8),
+        )
+        native_stop_controller = None
+        if config.get("native_stop_enabled", True):
+            native_stop_controller = NativeStopController(
+                helper_path=config.get("native_stop_helper_path", "./native/build/go2_sport_helper"),
+                network_interface=config.get("native_stop_interface", "wlan0"),
+                enabled=config.get("native_stop_enabled", True),
+                timeout_sec=config.get("native_stop_timeout_sec", 5.0),
+            )
+        self.controller = SafeController(
+            dry_run_controller=DryRunController(dry_run=config.get("dry_run", True)),
+            native_stop_controller=native_stop_controller,
+        )
+        self.command_timeout_sec = float(config.get("command_timeout_sec", 0.5))
+        self.last_cmd_time = None
+        self.last_motion_command = None
+        self.stop_sent = False
         self.robot_state_interval_sec = 1.0
         self.odom_interval_sec = 0.1
+        self.imu_interval_sec = 0.1
         self._stopping = False
 
     async def run_forever(self):
@@ -35,6 +63,8 @@ class WebSocketClient:
                 raise
             except KeyboardInterrupt:
                 self._stopping = True
+                print("[GO2][SAFETY] keyboard interrupt, stop")
+                self.controller.stop()
                 break
             except Exception as exc:
                 print(f"[GO2] connection error: {exc}")
@@ -53,10 +83,12 @@ class WebSocketClient:
         sender = asyncio.create_task(self._heartbeat_loop(websocket))
         state_sender = asyncio.create_task(self._robot_state_loop(websocket))
         odom_sender = asyncio.create_task(self._odom_loop(websocket))
+        imu_sender = asyncio.create_task(self._imu_loop(websocket))
+        timeout_checker = asyncio.create_task(self._command_timeout_loop())
         receiver = asyncio.create_task(self._receive_loop(websocket))
         try:
             done, pending = await asyncio.wait(
-                {sender, state_sender, odom_sender, receiver},
+                {sender, state_sender, odom_sender, imu_sender, timeout_checker, receiver},
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for task in done:
@@ -64,13 +96,20 @@ class WebSocketClient:
                 if exc:
                     raise exc
         finally:
-            for task in (sender, state_sender, odom_sender, receiver):
+            if self.last_cmd_time is not None:
+                print("[GO2][SAFETY] websocket disconnected, stop")
+                self.controller.stop()
+                self.stop_sent = True
+
+            for task in (sender, state_sender, odom_sender, imu_sender, timeout_checker, receiver):
                 if not task.done():
                     task.cancel()
             await asyncio.gather(
                 sender,
                 state_sender,
                 odom_sender,
+                imu_sender,
+                timeout_checker,
                 receiver,
                 return_exceptions=True,
             )
@@ -105,17 +144,56 @@ class WebSocketClient:
             print(f"[GO2] send odom seq={seq}")
             await asyncio.sleep(self.odom_interval_sec)
 
+    async def _imu_loop(self, websocket):
+        while not self._stopping:
+            seq = self._next_seq()
+            imu = self.imu_source.get_imu()
+            message = make_imu(seq, self.connection_id, imu)
+            await websocket.send(message)
+            print(f"[GO2] send imu seq={seq}")
+            await asyncio.sleep(self.imu_interval_sec)
+
+    async def _command_timeout_loop(self):
+        while not self._stopping:
+            if self.last_cmd_time is not None:
+                elapsed = time.monotonic() - self.last_cmd_time
+                if elapsed > self.command_timeout_sec and not self.stop_sent:
+                    self.controller.stop()
+                    self.stop_sent = True
+            await asyncio.sleep(0.05)
+
     async def _receive_loop(self, websocket):
         async for raw in websocket:
             try:
                 msg = parse_message(raw)
-                validate_message(msg, expected_type="heartbeat_ack")
-                print(f"[GO2] recv heartbeat_ack seq={msg.get('seq')}")
+                msg_type = msg.get("type")
+                if msg_type == "heartbeat_ack":
+                    validate_message(msg, expected_type="heartbeat_ack")
+                    print(f"[GO2] recv heartbeat_ack seq={msg.get('seq')}")
+                elif msg_type == "cmd_vel":
+                    self._handle_cmd_vel(msg)
+                else:
+                    raise ValueError(f"unsupported message type: {msg_type}")
             except Exception as exc:
                 print(f"[GO2] invalid message ignored: {exc}")
 
+    def _handle_cmd_vel(self, msg):
+        validate_message(msg, expected_type="cmd_vel")
+        print(f"[GO2] recv cmd_vel seq={msg.get('seq')}")
+        self.last_cmd_time = time.monotonic()
+        payload = msg["payload"]
+        vx = float(payload.get("linear_x", 0.0))
+        vy = float(payload.get("linear_y", 0.0))
+        yaw_rate = float(payload.get("angular_z", 0.0))
+        vx, vy, yaw_rate = self.safety_limiter.limit_cmd(vx, vy, yaw_rate)
+        self.last_motion_command = (vx, vy, yaw_rate)
+        self.stop_sent = self.safety_limiter.is_zero_cmd(vx, vy, yaw_rate)
+        self.controller.move(vx, vy, yaw_rate)
+
     async def close(self):
         self._stopping = True
+        print("[GO2][SAFETY] client closing, stop")
+        self.controller.stop()
         websocket = self.websocket
         self.websocket = None
         if websocket is not None:

@@ -43,3 +43,50 @@ Change the IP in `server_url` to the Ubuntu station IP address on the GO2 WiFi n
 7. GO2 should enter reconnect mode.
 8. Restart the Ubuntu server.
 9. GO2 should reconnect automatically.
+
+## Phase2-G NativeStopController
+
+Phase2-G connects only the native SDK2 stop helper into the GO2 Python safety
+stop path. It does not connect real movement.
+
+Build the helper first on GO2:
+
+```bash
+cd ~/go2_agent/native
+./build_helper.sh
+```
+
+Test native stop directly:
+
+```bash
+cd ~/go2_agent
+python3 test_native_stop.py
+```
+
+Expected output contains:
+
+```text
+[GO2][NATIVE_STOP] executing helper
+[HELPER] stop-only mode
+[HELPER] initializing SDK2 on iface=wlan0
+[HELPER] calling StopMove only
+[HELPER] StopMove complete
+```
+
+Runtime behavior:
+
+```text
+move() remains DryRun only.
+stop() first calls DryRunController.stop().
+stop() then calls the native helper with --stop-only when native_stop_enabled is true.
+The native helper never calls Move() in this phase.
+```
+
+Relevant `config.yaml` options:
+
+```yaml
+native_stop_enabled: true
+native_stop_helper_path: "./native/build/go2_sport_helper"
+native_stop_interface: "wlan0"
+native_stop_timeout_sec: 5.0
+```

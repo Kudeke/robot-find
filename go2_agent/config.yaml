@@ -2,3 +2,12 @@ server_url: "ws://172.20.10.6:8765/go2"
 heartbeat_interval_sec: 1.0
 reconnect_interval_sec: 2.0
 log_level: "INFO"
+max_vx: 0.5
+max_vy: 0.3
+max_yaw_rate: 0.8
+dry_run: true
+command_timeout_sec: 0.5
+native_stop_enabled: true
+native_stop_helper_path: "./native/build/go2_sport_helper"
+native_stop_interface: "wlan0"
+native_stop_timeout_sec: 15.0

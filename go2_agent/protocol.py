@@ -49,6 +49,18 @@ def make_odom(seq, connection_id, odom):
     return json.dumps(message, separators=(",", ":"))
 
 
+def make_imu(seq, connection_id, imu):
+    message = {
+        "type": "imu",
+        "version": VERSION,
+        "seq": int(seq),
+        "timestamp_ns": now_ns(),
+        "connection_id": str(connection_id),
+        "payload": dict(imu),
+    }
+    return json.dumps(message, separators=(",", ":"))
+
+
 def parse_message(raw):
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8")

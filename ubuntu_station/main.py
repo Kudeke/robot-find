@@ -16,10 +16,10 @@ async def async_main():
     config = load_config()
     ros2_bridge = Ros2Bridge()
     server = WebSocketServer(config, ros2_bridge=ros2_bridge)
+    ros2_bridge.set_cmd_vel_callback(server.send_cmd_vel)
     try:
         await server.run_forever()
     finally:
-        await server.close()
         ros2_bridge.close()
 
 

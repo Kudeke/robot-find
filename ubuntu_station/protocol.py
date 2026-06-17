@@ -24,6 +24,24 @@ def make_heartbeat_ack(seq):
     return json.dumps(message, separators=(",", ":"))
 
 
+def make_cmd_vel(seq, linear_x, linear_y, angular_z, duration_ms=100):
+    message = {
+        "type": "cmd_vel",
+        "version": VERSION,
+        "seq": int(seq),
+        "timestamp_ns": now_ns(),
+        "role": ROLE,
+        "payload": {
+            "linear_x": float(linear_x),
+            "linear_y": float(linear_y),
+            "angular_z": float(angular_z),
+            "duration_ms": int(duration_ms),
+            "source": "ros2_cmd_vel",
+        },
+    }
+    return json.dumps(message, separators=(",", ":"))
+
+
 def parse_message(raw):
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8")

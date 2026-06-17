@@ -2,7 +2,7 @@ import asyncio
 
 import websockets
 
-from protocol import make_heartbeat_ack, parse_message, validate_message
+from protocol import make_cmd_vel, make_heartbeat_ack, parse_message, validate_message
 
 
 class WebSocketServer:
@@ -10,12 +10,17 @@ class WebSocketServer:
         self.host = config.get("host", "0.0.0.0")
         self.port = int(config.get("port", 8765))
         self.path = config.get("path", "/go2")
+        self.cmd_vel_duration_ms = int(config.get("cmd_vel_duration_ms", 100))
         self.ros2_bridge = ros2_bridge
         self.server = None
+        self.loop = None
+        self.current_websocket = None
         self.message_counter = 0
+        self.host_seq = 0
 
     async def run_forever(self):
         try:
+            self.loop = asyncio.get_running_loop()
             self.server = await websockets.serve(
                 self._handler,
                 self.host,
@@ -39,6 +44,7 @@ class WebSocketServer:
             await websocket.close(code=1008, reason="invalid path")
             return
 
+        self.current_websocket = websocket
         try:
             async for raw in websocket:
                 self.message_counter += 1
@@ -51,6 +57,8 @@ class WebSocketServer:
                         self._handle_robot_state(remote_ip, msg)
                     elif msg_type == "odom":
                         self._handle_odom(remote_ip, msg)
+                    elif msg_type == "imu":
+                        self._handle_imu(remote_ip, msg)
                     else:
                         raise ValueError(f"unsupported message type: {msg_type}")
                 except Exception as exc:
@@ -60,6 +68,8 @@ class WebSocketServer:
         except Exception as exc:
             print(f"[HOST] connection error from {remote_ip}: {exc}")
         finally:
+            if self.current_websocket is websocket:
+                self.current_websocket = None
             print("[HOST] go2 disconnected")
 
     async def _handle_heartbeat(self, websocket, remote_ip, msg):
@@ -100,6 +110,63 @@ class WebSocketServer:
             f"[HOST] odom from {remote_ip} "
             f"seq={seq} "
             f"total_messages={self.message_counter}"
+        )
+
+    def _handle_imu(self, remote_ip, msg):
+        validate_message(msg, expected_type="imu")
+        seq = msg["seq"]
+        payload = msg["payload"]
+        if self.ros2_bridge is not None:
+            self.ros2_bridge.publish_imu(payload)
+        print(
+            f"[HOST] imu from {remote_ip} "
+            f"seq={seq} "
+            f"total_messages={self.message_counter}"
+        )
+
+    def send_cmd_vel(self, cmd_dict):
+        print(
+            "[HOST] cmd_vel callback received "
+            f"linear_x={cmd_dict.get('linear_x', 0.0)} "
+            f"linear_y={cmd_dict.get('linear_y', 0.0)} "
+            f"angular_z={cmd_dict.get('angular_z', 0.0)}"
+        )
+        websocket = self.current_websocket
+        loop = self.loop
+        if websocket is None or loop is None:
+            print("[HOST] no active GO2 session, drop cmd_vel")
+            return
+        asyncio.run_coroutine_threadsafe(
+            self._send_cmd_vel(websocket, cmd_dict),
+            loop,
+        )
+
+    async def _send_cmd_vel(self, websocket, cmd_dict):
+        if websocket is not self.current_websocket:
+            print("[HOST] no active GO2 session, drop cmd_vel")
+            return
+
+        self.host_seq += 1
+        seq = self.host_seq
+        linear_x = float(cmd_dict.get("linear_x", 0.0))
+        linear_y = float(cmd_dict.get("linear_y", 0.0))
+        angular_z = float(cmd_dict.get("angular_z", 0.0))
+        message = make_cmd_vel(
+            seq,
+            linear_x,
+            linear_y,
+            angular_z,
+            duration_ms=self.cmd_vel_duration_ms,
+        )
+        try:
+            await websocket.send(message)
+        except websockets.exceptions.ConnectionClosed:
+            print("[HOST] no active GO2 session, drop cmd_vel")
+            return
+
+        print(
+            f"[HOST] send cmd_vel seq={seq} "
+            f"linear_x={linear_x} linear_y={linear_y} angular_z={angular_z}"
         )
 
     def _get_request_path(self, websocket, path):
