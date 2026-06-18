@@ -358,3 +358,49 @@ Success ends with:
 PHASE3 PASSED
 =========================
 ```
+
+## Phase4 Acceptance
+
+Phase4 acceptance only measures and verifies the existing remote camera
+pipeline. It does not change the WebSocket protocol, robot control, or any
+battery, IMU, odometry, TF, RobotState, or cmd_vel behavior.
+
+Terminal 1, start Ubuntu Station:
+
+```bash
+cd ~/go2wireless_webrct/ubuntu_station
+./run_station.sh
+```
+
+Terminal 2, start the RealSense driver on GO2 and keep it running:
+
+```bash
+cd ~/go2_agent
+./tools/start_realsense_test.sh
+```
+
+Terminal 3, start GO2 Agent:
+
+```bash
+cd ~/go2_agent
+./run_go2_agent.sh
+```
+
+Confirm in RViz2 that an `Image` display subscribed to
+`/remote/camera/color/compressed` continuously shows the remote color image.
+Then run on Ubuntu:
+
+```bash
+cd ~/go2wireless_webrct/ubuntu_station
+./run_phase4_acceptance.sh
+```
+
+The test checks that the compressed camera topic exists, its measured
+frequency is greater than zero, bandwidth and average message size statistics
+are available, and the operator confirms the RViz2 image. Success ends with:
+
+```text
+=========================
+PHASE4 PASSED
+=========================
+```
