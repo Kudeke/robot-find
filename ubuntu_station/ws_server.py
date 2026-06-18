@@ -1,4 +1,5 @@
 import asyncio
+import base64
 
 import websockets
 
@@ -61,6 +62,8 @@ class WebSocketServer:
                         self._handle_imu(remote_ip, msg)
                     elif msg_type == "battery":
                         self._handle_battery(remote_ip, msg)
+                    elif msg_type == "camera_frame":
+                        self._handle_camera_frame(remote_ip, msg)
                     else:
                         raise ValueError(f"unsupported message type: {msg_type}")
                 except Exception as exc:
@@ -135,6 +138,39 @@ class WebSocketServer:
             f"[HOST] battery from {remote_ip} "
             f"percentage={payload.get('percentage')} "
             f"voltage={payload.get('voltage')}"
+        )
+
+    def _handle_camera_frame(self, remote_ip, msg):
+        validate_message(msg, expected_type="camera_frame")
+        payload = msg["payload"]
+        camera = str(payload.get("camera", ""))
+        encoding = str(payload.get("encoding", ""))
+        jpeg_base64 = payload.get("jpeg_base64")
+
+        if camera != "color":
+            raise ValueError(f"unsupported camera: {camera}")
+        if encoding != "jpeg":
+            raise ValueError(f"unsupported camera encoding: {encoding}")
+        if not isinstance(jpeg_base64, str):
+            raise ValueError("jpeg_base64 must be a string")
+
+        try:
+            jpeg_bytes = base64.b64decode(jpeg_base64, validate=True)
+        except Exception as exc:
+            raise ValueError(f"invalid jpeg_base64: {exc}") from exc
+
+        if not jpeg_bytes:
+            raise ValueError("empty JPEG payload")
+
+        if self.ros2_bridge is not None:
+            self.ros2_bridge.publish_camera_jpeg(jpeg_bytes, camera=camera)
+
+        print(
+            f"[HOST] camera_frame from {remote_ip} "
+            f"camera={camera} "
+            f"width={payload.get('width')} "
+            f"height={payload.get('height')} "
+            f"jpeg_bytes={len(jpeg_bytes)}"
         )
 
     def send_cmd_vel(self, cmd_dict):

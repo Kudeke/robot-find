@@ -10,6 +10,7 @@ from native_stop_controller import NativeStopController
 from odom_source import MockOdomSource
 from protocol import (
     make_battery,
+    make_camera_frame,
     make_heartbeat,
     make_imu,
     make_odom,
@@ -29,6 +30,7 @@ class WebSocketClient:
         imu_source=None,
         odom_source=None,
         state_source=None,
+        camera_source=None,
         dds_node=None,
     ):
         self.server_url = config.get("server_url", "ws://192.168.41.1:8765/go2")
@@ -41,6 +43,7 @@ class WebSocketClient:
         self.odom_source = odom_source if odom_source is not None else MockOdomSource()
         self.imu_source = imu_source if imu_source is not None else MockImuSource()
         self.battery_source = battery_source
+        self.camera_source = camera_source
         self.dds_node = dds_node
         self.safety_limiter = SafetyLimiter(
             max_vx=config.get("max_vx", 0.5),
@@ -79,6 +82,10 @@ class WebSocketClient:
         if battery_rate_hz <= 0.0:
             raise ValueError("battery_rate_hz must be greater than 0")
         self.battery_interval_sec = 1.0 / battery_rate_hz
+        camera_rate_hz = float(config.get("camera_rate_hz", 1.0))
+        if camera_rate_hz <= 0.0:
+            raise ValueError("camera_rate_hz must be greater than 0")
+        self.camera_interval_sec = 1.0 / camera_rate_hz
         self._stopping = False
 
     async def run_forever(self):
@@ -116,6 +123,7 @@ class WebSocketClient:
         odom_sender = asyncio.create_task(self._odom_loop(websocket))
         imu_sender = asyncio.create_task(self._imu_loop(websocket))
         battery_sender = asyncio.create_task(self._battery_loop(websocket))
+        camera_sender = asyncio.create_task(self._camera_loop(websocket))
         dds_spinner = asyncio.create_task(self._dds_spin_loop())
         timeout_checker = asyncio.create_task(self._command_timeout_loop())
         receiver = asyncio.create_task(self._receive_loop(websocket))
@@ -127,6 +135,7 @@ class WebSocketClient:
                     odom_sender,
                     imu_sender,
                     battery_sender,
+                    camera_sender,
                     dds_spinner,
                     timeout_checker,
                     receiver,
@@ -149,6 +158,7 @@ class WebSocketClient:
                 odom_sender,
                 imu_sender,
                 battery_sender,
+                camera_sender,
                 dds_spinner,
                 timeout_checker,
                 receiver,
@@ -161,6 +171,7 @@ class WebSocketClient:
                 odom_sender,
                 imu_sender,
                 battery_sender,
+                camera_sender,
                 dds_spinner,
                 timeout_checker,
                 receiver,
@@ -223,6 +234,22 @@ class WebSocketClient:
                         f"voltage={battery.get('voltage')}"
                     )
             await asyncio.sleep(self.battery_interval_sec)
+
+    async def _camera_loop(self, websocket):
+        while not self._stopping:
+            if self.camera_source is not None:
+                frame = self.camera_source.get_camera_frame()
+                if frame is not None:
+                    seq = self._next_seq()
+                    message = make_camera_frame(seq, self.connection_id, frame)
+                    await websocket.send(message)
+                    print(
+                        f"[GO2] send camera_frame seq={seq} "
+                        f"camera={frame.get('camera')} "
+                        f"width={frame.get('width')} "
+                        f"height={frame.get('height')}"
+                    )
+            await asyncio.sleep(self.camera_interval_sec)
 
     async def _dds_spin_loop(self):
         while not self._stopping:

@@ -361,3 +361,194 @@ no robot control
 no DDS over WiFi
 WebSocket carries RobotState JSON only
 ```
+
+## Phase4-A Intel RealSense D435i Environment Probe
+
+Phase4-A only probes the GO2 environment and the externally connected Intel
+RealSense D435i. It does not connect the camera to `main.py`, does not transmit
+images over WebSocket or WebRTC, and does not control the robot.
+
+Run the environment probe:
+
+```bash
+cd ~/go2_agent
+./tools/probe_realsense_env.sh
+```
+
+The complete output is saved under:
+
+```text
+tools/logs/realsense_env_YYYYMMDD_HHMMSS.log
+```
+
+If the `realsense2_camera` ROS2 package exists, start the read-only test driver:
+
+```bash
+./tools/start_realsense_test.sh
+```
+
+In another GO2 terminal, inspect currently available topics:
+
+```bash
+cd ~/go2_agent
+./tools/probe_realsense_topics.sh
+```
+
+Inspect camera information and image topic rates without printing image data:
+
+```bash
+./tools/echo_realsense_once.sh
+```
+
+Safety boundary:
+
+```text
+camera environment and ROS2 topic probing only
+no main.py integration
+no WebSocket image transmission
+no WebRTC
+no SLAM
+no robot control
+no changes to Phase1-3 telemetry and safety paths
+```
+
+## Phase4-C RealSense Topic Auto-Discovery
+
+Phase4-C discovers the active RealSense namespace from `ros2 topic list -t`.
+It supports `sensor_msgs/msg/Image`, `sensor_msgs/msg/CompressedImage`, and
+`sensor_msgs/msg/CameraInfo` topics whose names contain camera plus color,
+depth, or infra.
+
+Start the read-only RealSense driver:
+
+```bash
+cd ~/go2_agent
+./tools/start_realsense_test.sh
+```
+
+In another GO2 terminal, inspect every discovered camera topic:
+
+```bash
+cd ~/go2_agent
+./tools/probe_realsense_topics.sh
+./tools/echo_realsense_once.sh
+```
+
+Run the automatic pipeline acceptance check:
+
+```bash
+./tools/check_realsense_pipeline.sh
+```
+
+The acceptance check requires:
+
+```text
+one color Image or CompressedImage topic
+one depth Image or CompressedImage topic
+one color CameraInfo topic
+one depth CameraInfo topic
+```
+
+Success ends with:
+
+```text
+=========================
+REALSENSE PIPELINE PASSED
+=========================
+```
+
+Phase4-C remains read-only. It does not connect to `main.py`, transmit images
+over WebSocket or WebRTC, run SLAM, or control the robot.
+
+## Phase4-D Camera Capture Probe
+
+Phase4-D verifies that GO2 can read the RealSense color image topic and save
+three JPEG files locally. It does not connect camera capture to `main.py` and
+does not transmit images.
+
+Keep the read-only RealSense driver running, then execute:
+
+```bash
+cd ~/go2_agent
+./tools/run_probe_camera_capture.sh
+```
+
+Expected output:
+
+```text
+[GO2][CAMERA] frame received
+[GO2][CAMERA] saved capture_001.jpg
+[GO2][CAMERA] saved capture_002.jpg
+[GO2][CAMERA] saved capture_003.jpg
+[GO2][CAMERA] saved_count=3
+```
+
+The JPEG files are saved under:
+
+```text
+tools/captures/capture_001.jpg
+tools/captures/capture_002.jpg
+tools/captures/capture_003.jpg
+```
+
+Phase4-D is a local read-only probe. It does not use WebSocket, WebRTC, SLAM,
+or robot control and does not modify the existing telemetry, protocol, or
+movement logic.
+
+## Phase4-E JPEG WebSocket Camera Probe
+
+Phase4-E sends one color JPEG frame per second from GO2 to Ubuntu:
+
+```text
+RealSense Image -> JPEG quality 70 -> Base64 -> WebSocket JSON
+-> ROS2 sensor_msgs/msg/CompressedImage
+```
+
+GO2 configuration:
+
+```yaml
+camera_enabled: true
+camera_topic: "/camera/camera/color/image_raw"
+camera_rate_hz: 1.0
+camera_jpeg_quality: 70
+```
+
+Start Ubuntu Station:
+
+```bash
+cd ~/go2wireless_webrct/ubuntu_station
+./run_station.sh
+```
+
+Keep the RealSense driver running on GO2, then start the agent:
+
+```bash
+cd ~/go2_agent
+./run_go2_agent.sh
+```
+
+Verify the Ubuntu ROS2 stream:
+
+```bash
+cd ~/go2wireless_webrct/ubuntu_station
+./echo_camera.sh
+```
+
+The published topic is:
+
+```text
+/remote/camera/color/compressed
+sensor_msgs/msg/CompressedImage
+```
+
+For an isolated camera-only WebSocket probe, stop the normal GO2 agent first
+and run:
+
+```bash
+cd ~/go2_agent
+python3 tools/probe_camera_ws.py
+```
+
+Phase4-E does not use WebRTC, SLAM, YOLO, or VLN and does not control the
+robot. GO2-local ROS2 image data is converted to JPEG; only the JPEG Base64
+payload is transported over WebSocket.

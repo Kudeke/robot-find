@@ -73,6 +73,18 @@ def make_battery(seq, connection_id, battery):
     return json.dumps(message, separators=(",", ":"))
 
 
+def make_camera_frame(seq, connection_id, frame):
+    message = {
+        "type": "camera_frame",
+        "version": VERSION,
+        "seq": int(seq),
+        "timestamp_ns": now_ns(),
+        "connection_id": str(connection_id),
+        "payload": dict(frame),
+    }
+    return json.dumps(message, separators=(",", ":"))
+
+
 def parse_message(raw):
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8")

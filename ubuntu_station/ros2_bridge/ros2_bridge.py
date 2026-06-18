@@ -2,6 +2,7 @@ import json
 import math
 import threading
 
+from camera_bridge import CameraBridge
 from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
 import rclpy
@@ -25,6 +26,7 @@ class Ros2Bridge:
             "/battery_state",
             10,
         )
+        self.camera_bridge = CameraBridge(self.node)
         self.tf_broadcaster = TransformBroadcaster(self.node)
         self.cmd_vel_subscription = self.node.create_subscription(
             Twist,
@@ -135,6 +137,9 @@ class Ros2Bridge:
         )
         msg.power_supply_status = BatteryState.POWER_SUPPLY_STATUS_UNKNOWN
         self.battery_publisher.publish(msg)
+
+    def publish_camera_jpeg(self, jpeg_bytes, camera="color"):
+        self.camera_bridge.publish_jpeg(jpeg_bytes, camera=camera)
 
     def _on_cmd_vel(self, msg):
         print(

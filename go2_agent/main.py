@@ -21,6 +21,7 @@ async def async_main():
     imu_mode = str(config.get("imu_source", "mock"))
     odom_mode = str(config.get("odom_source", "mock"))
     state_mode = str(config.get("state_source", "mock"))
+    camera_enabled = bool(config.get("camera_enabled", False))
     dds_node = None
     owns_rclpy = False
     client = None
@@ -31,6 +32,7 @@ async def async_main():
             or imu_mode == "real_dds"
             or odom_mode == "real_dds"
             or state_mode == "real_dds"
+            or camera_enabled
         ):
             import rclpy
 
@@ -86,12 +88,28 @@ async def async_main():
         else:
             raise ValueError(f"unsupported state_source: {state_mode}")
 
+        camera_source = None
+        if camera_enabled:
+            from camera.frame_source import RosCameraFrameSource
+
+            camera_source = RosCameraFrameSource(
+                dds_node,
+                topic=config.get(
+                    "camera_topic",
+                    "/camera/camera/color/image_raw",
+                ),
+                camera="color",
+                jpeg_quality=config.get("camera_jpeg_quality", 70),
+            )
+            print("[GO2] camera source=color JPEG")
+
         client = WebSocketClient(
             config,
             battery_source=battery_source,
             imu_source=imu_source,
             odom_source=odom_source,
             state_source=state_source,
+            camera_source=camera_source,
             dds_node=dds_node,
         )
         await client.run_forever()

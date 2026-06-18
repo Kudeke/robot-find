@@ -23,3 +23,7 @@ odom_rate_hz: 10.0
 state_source: "real_dds"
 state_topic: "/lf/sportmodestate"
 state_rate_hz: 1.0
+camera_enabled: true
+camera_topic: "/camera/camera/color/image_raw"
+camera_rate_hz: 1.0
+camera_jpeg_quality: 70
