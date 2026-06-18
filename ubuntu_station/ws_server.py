@@ -59,6 +59,8 @@ class WebSocketServer:
                         self._handle_odom(remote_ip, msg)
                     elif msg_type == "imu":
                         self._handle_imu(remote_ip, msg)
+                    elif msg_type == "battery":
+                        self._handle_battery(remote_ip, msg)
                     else:
                         raise ValueError(f"unsupported message type: {msg_type}")
                 except Exception as exc:
@@ -122,6 +124,17 @@ class WebSocketServer:
             f"[HOST] imu from {remote_ip} "
             f"seq={seq} "
             f"total_messages={self.message_counter}"
+        )
+
+    def _handle_battery(self, remote_ip, msg):
+        validate_message(msg, expected_type="battery")
+        payload = msg["payload"]
+        if self.ros2_bridge is not None:
+            self.ros2_bridge.publish_battery(payload)
+        print(
+            f"[HOST] battery from {remote_ip} "
+            f"percentage={payload.get('percentage')} "
+            f"voltage={payload.get('voltage')}"
         )
 
     def send_cmd_vel(self, cmd_dict):

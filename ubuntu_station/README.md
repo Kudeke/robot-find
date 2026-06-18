@@ -325,3 +325,36 @@ inspect_go2_sport_example.py reads official Python go2_sport_client.py examples
 without executing them and prints import / InitChannel / SportClient / motion
 related lines.
 ```
+
+## Phase3 Acceptance Test
+
+Terminal 1, start Ubuntu Station:
+
+```bash
+cd ~/go2wireless_webrct/ubuntu_station
+./run_station.sh
+```
+
+Terminal 2, start GO2 Agent on GO2:
+
+```bash
+cd ~/go2_agent
+./run_go2_agent.sh
+```
+
+Terminal 3, run the Phase3 acceptance test on Ubuntu:
+
+```bash
+cd ~/go2wireless_webrct/ubuntu_station
+./run_phase3_acceptance.sh
+```
+
+The test checks recent WebSocket-derived battery, IMU, odometry, and
+RobotState data; required ROS2 topics; and the `odom -> base_link` transform.
+Success ends with:
+
+```text
+=========================
+PHASE3 PASSED
+=========================
+```

@@ -11,3 +11,15 @@ native_stop_enabled: true
 native_stop_helper_path: "./native/build/go2_sport_helper"
 native_stop_interface: "wlan0"
 native_stop_timeout_sec: 15.0
+battery_source: "real_dds"
+battery_topic: "/lf/lowstate"
+battery_rate_hz: 1.0
+imu_source: "real_dds"
+imu_topic: "/lf/lowstate"
+imu_rate_hz: 10.0
+odom_source: "real_dds"
+odom_topic: "/lf/sportmodestate"
+odom_rate_hz: 10.0
+state_source: "real_dds"
+state_topic: "/lf/sportmodestate"
+state_rate_hz: 1.0

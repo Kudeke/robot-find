@@ -61,6 +61,18 @@ def make_imu(seq, connection_id, imu):
     return json.dumps(message, separators=(",", ":"))
 
 
+def make_battery(seq, connection_id, battery):
+    message = {
+        "type": "battery",
+        "version": VERSION,
+        "seq": int(seq),
+        "timestamp_ns": now_ns(),
+        "connection_id": str(connection_id),
+        "payload": dict(battery),
+    }
+    return json.dumps(message, separators=(",", ":"))
+
+
 def parse_message(raw):
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8")

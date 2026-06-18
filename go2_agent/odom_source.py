@@ -1,5 +1,7 @@
 import math
 
+from dds.converters import sportstate_to_odom_json
+
 
 class MockOdomSource:
     def __init__(self):
@@ -39,4 +41,33 @@ class MockOdomSource:
                 "y": 0.0,
                 "z": self.angular_velocity_z,
             },
+        }
+
+
+class RealDdsOdomSource:
+    def __init__(self, node, topic="/lf/sportmodestate"):
+        from rclpy.qos import qos_profile_sensor_data
+        from unitree_go.msg import SportModeState
+
+        self._latest_odom = None
+        self._subscription = node.create_subscription(
+            SportModeState,
+            topic,
+            self._on_sport_state,
+            qos_profile_sensor_data,
+        )
+
+    def _on_sport_state(self, message):
+        self._latest_odom = sportstate_to_odom_json(message)
+
+    def get_odom(self):
+        if self._latest_odom is None:
+            return None
+        return {
+            "frame_id": self._latest_odom["frame_id"],
+            "child_frame_id": self._latest_odom["child_frame_id"],
+            "position": dict(self._latest_odom["position"]),
+            "orientation": dict(self._latest_odom["orientation"]),
+            "linear_velocity": dict(self._latest_odom["linear_velocity"]),
+            "angular_velocity": dict(self._latest_odom["angular_velocity"]),
         }

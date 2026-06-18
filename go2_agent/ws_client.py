@@ -8,22 +8,40 @@ from controller import DryRunController, SafeController
 from imu_source import MockImuSource
 from native_stop_controller import NativeStopController
 from odom_source import MockOdomSource
-from protocol import make_heartbeat, make_imu, make_odom, make_robot_state, parse_message, validate_message
+from protocol import (
+    make_battery,
+    make_heartbeat,
+    make_imu,
+    make_odom,
+    make_robot_state,
+    parse_message,
+    validate_message,
+)
 from safety import SafetyLimiter
 from state_source import MockStateSource
 
 
 class WebSocketClient:
-    def __init__(self, config):
+    def __init__(
+        self,
+        config,
+        battery_source=None,
+        imu_source=None,
+        odom_source=None,
+        state_source=None,
+        dds_node=None,
+    ):
         self.server_url = config.get("server_url", "ws://192.168.41.1:8765/go2")
         self.heartbeat_interval_sec = float(config.get("heartbeat_interval_sec", 1.0))
         self.reconnect_interval_sec = float(config.get("reconnect_interval_sec", 2.0))
         self.websocket = None
         self.seq = 0
         self.connection_id = uuid.uuid4().hex
-        self.state_source = MockStateSource()
-        self.odom_source = MockOdomSource()
-        self.imu_source = MockImuSource()
+        self.state_source = state_source if state_source is not None else MockStateSource()
+        self.odom_source = odom_source if odom_source is not None else MockOdomSource()
+        self.imu_source = imu_source if imu_source is not None else MockImuSource()
+        self.battery_source = battery_source
+        self.dds_node = dds_node
         self.safety_limiter = SafetyLimiter(
             max_vx=config.get("max_vx", 0.5),
             max_vy=config.get("max_vy", 0.3),
@@ -45,9 +63,22 @@ class WebSocketClient:
         self.last_cmd_time = None
         self.last_motion_command = None
         self.stop_sent = False
-        self.robot_state_interval_sec = 1.0
-        self.odom_interval_sec = 0.1
-        self.imu_interval_sec = 0.1
+        state_rate_hz = float(config.get("state_rate_hz", 1.0))
+        if state_rate_hz <= 0.0:
+            raise ValueError("state_rate_hz must be greater than 0")
+        self.robot_state_interval_sec = 1.0 / state_rate_hz
+        odom_rate_hz = float(config.get("odom_rate_hz", 10.0))
+        if odom_rate_hz <= 0.0:
+            raise ValueError("odom_rate_hz must be greater than 0")
+        self.odom_interval_sec = 1.0 / odom_rate_hz
+        imu_rate_hz = float(config.get("imu_rate_hz", 10.0))
+        if imu_rate_hz <= 0.0:
+            raise ValueError("imu_rate_hz must be greater than 0")
+        self.imu_interval_sec = 1.0 / imu_rate_hz
+        battery_rate_hz = float(config.get("battery_rate_hz", 1.0))
+        if battery_rate_hz <= 0.0:
+            raise ValueError("battery_rate_hz must be greater than 0")
+        self.battery_interval_sec = 1.0 / battery_rate_hz
         self._stopping = False
 
     async def run_forever(self):
@@ -84,11 +115,22 @@ class WebSocketClient:
         state_sender = asyncio.create_task(self._robot_state_loop(websocket))
         odom_sender = asyncio.create_task(self._odom_loop(websocket))
         imu_sender = asyncio.create_task(self._imu_loop(websocket))
+        battery_sender = asyncio.create_task(self._battery_loop(websocket))
+        dds_spinner = asyncio.create_task(self._dds_spin_loop())
         timeout_checker = asyncio.create_task(self._command_timeout_loop())
         receiver = asyncio.create_task(self._receive_loop(websocket))
         try:
             done, pending = await asyncio.wait(
-                {sender, state_sender, odom_sender, imu_sender, timeout_checker, receiver},
+                {
+                    sender,
+                    state_sender,
+                    odom_sender,
+                    imu_sender,
+                    battery_sender,
+                    dds_spinner,
+                    timeout_checker,
+                    receiver,
+                },
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for task in done:
@@ -101,7 +143,16 @@ class WebSocketClient:
                 self.controller.stop()
                 self.stop_sent = True
 
-            for task in (sender, state_sender, odom_sender, imu_sender, timeout_checker, receiver):
+            for task in (
+                sender,
+                state_sender,
+                odom_sender,
+                imu_sender,
+                battery_sender,
+                dds_spinner,
+                timeout_checker,
+                receiver,
+            ):
                 if not task.done():
                     task.cancel()
             await asyncio.gather(
@@ -109,6 +160,8 @@ class WebSocketClient:
                 state_sender,
                 odom_sender,
                 imu_sender,
+                battery_sender,
+                dds_spinner,
                 timeout_checker,
                 receiver,
                 return_exceptions=True,
@@ -128,30 +181,56 @@ class WebSocketClient:
 
     async def _robot_state_loop(self, websocket):
         while not self._stopping:
-            seq = self._next_seq()
             state = self.state_source.get_state()
-            message = make_robot_state(seq, self.connection_id, state)
-            await websocket.send(message)
-            print(f"[GO2] send robot_state seq={seq}")
+            if state is not None:
+                seq = self._next_seq()
+                message = make_robot_state(seq, self.connection_id, state)
+                await websocket.send(message)
+                print(f"[GO2] send robot_state seq={seq}")
             await asyncio.sleep(self.robot_state_interval_sec)
 
     async def _odom_loop(self, websocket):
         while not self._stopping:
-            seq = self._next_seq()
             odom = self.odom_source.get_odom()
-            message = make_odom(seq, self.connection_id, odom)
-            await websocket.send(message)
-            print(f"[GO2] send odom seq={seq}")
+            if odom is not None:
+                seq = self._next_seq()
+                message = make_odom(seq, self.connection_id, odom)
+                await websocket.send(message)
+                print(f"[GO2] send odom seq={seq}")
             await asyncio.sleep(self.odom_interval_sec)
 
     async def _imu_loop(self, websocket):
         while not self._stopping:
-            seq = self._next_seq()
             imu = self.imu_source.get_imu()
-            message = make_imu(seq, self.connection_id, imu)
-            await websocket.send(message)
-            print(f"[GO2] send imu seq={seq}")
+            if imu is not None:
+                seq = self._next_seq()
+                message = make_imu(seq, self.connection_id, imu)
+                await websocket.send(message)
+                print(f"[GO2] send imu seq={seq}")
             await asyncio.sleep(self.imu_interval_sec)
+
+    async def _battery_loop(self, websocket):
+        while not self._stopping:
+            if self.battery_source is not None:
+                battery = self.battery_source.get_battery()
+                if battery is not None:
+                    seq = self._next_seq()
+                    message = make_battery(seq, self.connection_id, battery)
+                    await websocket.send(message)
+                    print(
+                        f"[GO2] send battery seq={seq} "
+                        f"percentage={battery.get('percentage')} "
+                        f"voltage={battery.get('voltage')}"
+                    )
+            await asyncio.sleep(self.battery_interval_sec)
+
+    async def _dds_spin_loop(self):
+        while not self._stopping:
+            if self.dds_node is not None:
+                import rclpy
+
+                rclpy.spin_once(self.dds_node, timeout_sec=0.0)
+            await asyncio.sleep(0.01)
 
     async def _command_timeout_loop(self):
         while not self._stopping:

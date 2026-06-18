@@ -1,4 +1,5 @@
 import json
+import math
 import threading
 
 from geometry_msgs.msg import TransformStamped, Twist
@@ -6,7 +7,7 @@ from nav_msgs.msg import Odometry
 import rclpy
 from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.node import Node
-from sensor_msgs.msg import Imu
+from sensor_msgs.msg import BatteryState, Imu
 from std_msgs.msg import String
 from tf2_ros import TransformBroadcaster
 
@@ -19,6 +20,11 @@ class Ros2Bridge:
         self.state_publisher = self.node.create_publisher(String, "/go2/state", 10)
         self.odom_publisher = self.node.create_publisher(Odometry, "/remote/odom", 10)
         self.imu_publisher = self.node.create_publisher(Imu, "/remote/imu", 10)
+        self.battery_publisher = self.node.create_publisher(
+            BatteryState,
+            "/battery_state",
+            10,
+        )
         self.tf_broadcaster = TransformBroadcaster(self.node)
         self.cmd_vel_subscription = self.node.create_subscription(
             Twist,
@@ -103,6 +109,32 @@ class Ros2Bridge:
         msg.linear_acceleration.y = float(linear_acceleration.get("y", 0.0))
         msg.linear_acceleration.z = float(linear_acceleration.get("z", 0.0))
         self.imu_publisher.publish(msg)
+
+    def publish_battery(self, payload):
+        percentage = payload.get("percentage")
+        temperature = payload.get("temperature_ntc1")
+
+        msg = BatteryState()
+        msg.header.stamp = self.node.get_clock().now().to_msg()
+        msg.header.frame_id = "base_link"
+        msg.voltage = float(payload.get("voltage", math.nan))
+        msg.current = float(payload.get("current", math.nan))
+        if percentage is None:
+            msg.percentage = math.nan
+        else:
+            percentage_value = float(percentage)
+            msg.percentage = (
+                percentage_value / 100.0
+                if percentage_value > 1.0
+                else percentage_value
+            )
+        msg.temperature = (
+            float(temperature)
+            if temperature is not None
+            else math.nan
+        )
+        msg.power_supply_status = BatteryState.POWER_SUPPLY_STATUS_UNKNOWN
+        self.battery_publisher.publish(msg)
 
     def _on_cmd_vel(self, msg):
         print(

@@ -55,3 +55,36 @@ This command initializes SDK2 and only sends a stop command:
 
 `--stop-only` is only for validating SDK2 initialization and `StopMove()`.
 It does not call `Move()`.
+
+## Phase3-A RobotState Read-Only Probe
+
+Phase3-A adds `go2_state_helper`, a read-only SDK2 helper for probing
+`RobotStateClient` data access. It does not call `Move`, `StopMove`, `Stand`,
+`Sit`, `BalanceStand`, `Damp`, or any other motion control command.
+
+Build on GO2:
+
+```bash
+cd ~/go2_agent/native
+./build_helper.sh
+```
+
+Test on GO2:
+
+```bash
+./test_state_helper.sh
+```
+
+Equivalent manual commands:
+
+```bash
+./build/go2_state_helper --help
+./build/go2_state_helper --probe
+./build/go2_state_helper --read-once --iface wlan0
+./build/go2_state_helper --read-loop --iface wlan0 --count 5 --interval-ms 500
+```
+
+The helper initializes SDK2 only for `--read-once` and `--read-loop`, then calls
+the read-only `RobotStateClient::ServiceList(...)` path and prints the return
+code plus available service state fields. Battery, temperature, and error-code
+fields are printed as unavailable if they are not exposed by this SDK2 client.

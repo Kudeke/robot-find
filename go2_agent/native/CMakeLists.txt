@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(go2_sport_helper LANGUAGES CXX)
+project(go2_native_helpers LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -45,30 +45,36 @@ endif()
 
 message(STATUS "Using Unitree SDK2 library: ${UNITREE_SDK2_LINK_LIBRARY}")
 
+function(configure_go2_helper target_name)
+    target_include_directories(
+        ${target_name}
+        PRIVATE
+            "${UNITREE_SDK2_INCLUDE_DIR}"
+            "${UNITREE_SDK2_DDSCXX_INCLUDE_DIR}"
+            "${UNITREE_SDK2_THIRDPARTY_INCLUDE_DIR}"
+    )
+
+    target_link_libraries(
+        ${target_name}
+        PRIVATE
+            "${UNITREE_SDK2_LINK_LIBRARY}"
+            ddscxx
+            ddsc
+            pthread
+            dl
+            rt
+    )
+
+    set_target_properties(
+        ${target_name}
+        PROPERTIES
+            BUILD_RPATH "${UNITREE_SDK2_LIBRARY_DIR};${UNITREE_SDK2_THIRDPARTY_LIBRARY_DIR}"
+            INSTALL_RPATH "${UNITREE_SDK2_LIBRARY_DIR};${UNITREE_SDK2_THIRDPARTY_LIBRARY_DIR}"
+    )
+endfunction()
+
 add_executable(go2_sport_helper go2_sport_helper.cpp)
+configure_go2_helper(go2_sport_helper)
 
-target_include_directories(
-    go2_sport_helper
-    PRIVATE
-        "${UNITREE_SDK2_INCLUDE_DIR}"
-        "${UNITREE_SDK2_DDSCXX_INCLUDE_DIR}"
-        "${UNITREE_SDK2_THIRDPARTY_INCLUDE_DIR}"
-)
-
-target_link_libraries(
-    go2_sport_helper
-    PRIVATE
-        "${UNITREE_SDK2_LINK_LIBRARY}"
-        ddscxx
-        ddsc
-        pthread
-        dl
-        rt
-)
-
-set_target_properties(
-    go2_sport_helper
-    PROPERTIES
-        BUILD_RPATH "${UNITREE_SDK2_LIBRARY_DIR};${UNITREE_SDK2_THIRDPARTY_LIBRARY_DIR}"
-        INSTALL_RPATH "${UNITREE_SDK2_LIBRARY_DIR};${UNITREE_SDK2_THIRDPARTY_LIBRARY_DIR}"
-)
+add_executable(go2_state_helper go2_state_helper.cpp)
+configure_go2_helper(go2_state_helper)
