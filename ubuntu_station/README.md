@@ -523,3 +523,97 @@ To verify whether the bundled RViz configuration exists:
 Phase5-C adds acceptance tooling and RViz configuration only. It does not
 modify communication, PointCloud2 data, TF publication, camera, telemetry, or
 robot control.
+
+## Phase6-A SLAM Inputs
+
+Phase6-A performs read-only checks of the existing ROS2 Jazzy topics and TF
+tree. It does not start SLAM, install software, publish data, or modify the
+communication pipeline.
+
+| Input | Topic | Type | Frame / TF | Expected rate |
+| --- | --- | --- | --- | --- |
+| Battery | `/battery_state` | `sensor_msgs/msg/BatteryState` | `base_link` | about 1 Hz |
+| IMU | `/remote/imu` | `sensor_msgs/msg/Imu` | `base_link` | about 10 Hz |
+| Odom | `/remote/odom` | `nav_msgs/msg/Odometry` | `odom -> base_link` | about 10 Hz |
+| Camera | `/remote/camera/color/compressed` | `sensor_msgs/msg/CompressedImage` | `camera_color_optical_frame` | about 1 Hz |
+| PointCloud | `/remote/lidar/points` | `sensor_msgs/msg/PointCloud2` | `utlidar_lidar` | about 5 Hz |
+
+Check required SLAM topics and their message types:
+
+```bash
+cd ~/go2wireless_webrct/ubuntu_station
+./tools/check_slam_topics.sh
+```
+
+Check the transforms required for a unified SLAM frame tree:
+
+```bash
+./tools/check_slam_tf.sh
+```
+
+The TF check requires both:
+
+```text
+odom -> base_link
+odom -> utlidar_lidar
+```
+
+The temporary visualization transform `lidar_view -> utlidar_lidar` is enough
+for a LiDAR-only RViz view, but it is not connected to `odom` and therefore is
+not sufficient for SLAM readiness.
+
+Run the complete input probe:
+
+```bash
+./tools/probe_slam_inputs.sh
+```
+
+The probe checks Battery, IMU, Odom, Camera frequency and bandwidth,
+PointCloud frequency, required topic types, and TF connectivity. A failed
+check is reported only; the scripts do not start or repair any component.
+
+## Phase6-B LiDAR TF
+
+Phase6-B connects the LiDAR frame to the existing robot TF tree with a static
+transform:
+
+```text
+odom -> base_link -> utlidar_lidar
+```
+
+Start the static transform in a dedicated Ubuntu terminal and keep it running:
+
+```bash
+cd ~/go2wireless_webrct/ubuntu_station
+./start_lidar_tf.sh
+```
+
+The first version uses temporary zero extrinsics:
+
+```text
+x=0, y=0, z=0
+roll=0, pitch=0, yaw=0
+parent=base_link
+child=utlidar_lidar
+```
+
+Verify both the direct and composed transforms:
+
+```bash
+./check_lidar_tf.sh
+```
+
+Expected result:
+
+```text
+[PASS] TF base_link -> utlidar_lidar
+[PASS] TF odom -> utlidar_lidar
+=========================
+LIDAR TF PASSED
+=========================
+```
+
+The zero transform is temporary and must later be replaced with the measured
+LiDAR mounting translation and rotation relative to `base_link`. These scripts
+do not modify PointCloud2, topics, WebSocket communication, protocol, odometry,
+or robot control.
