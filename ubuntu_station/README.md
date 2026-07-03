@@ -456,3 +456,70 @@ no odom-to-LiDAR TF is added in this phase.
 Phase5-B does not control the robot and does not change battery, IMU, odometry,
 TF, RobotState, camera, cmd_vel, or NativeStopController behavior. DDS remains
 local to GO2; only PointCloud2 JSON/Base64 travels over WebSocket.
+
+## Phase5-C LiDAR Pipeline Acceptance
+
+LiDAR ROS2 output:
+
+```text
+Topic: /remote/lidar/points
+Type: sensor_msgs/msg/PointCloud2
+```
+
+Before opening RViz2, keep the visualization-only static transform running:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+ros2 run tf2_ros static_transform_publisher \
+  --x 0 --y 0 --z 0 \
+  --roll 0 --pitch 0 --yaw 0 \
+  --frame-id lidar_view \
+  --child-frame-id utlidar_lidar
+```
+
+Open the supplied RViz2 configuration:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+rviz2 -d ~/go2wireless_webrct/ubuntu_station/rviz/lidar_only.rviz
+```
+
+The RViz2 configuration uses:
+
+```text
+Fixed Frame: lidar_view
+Display: PointCloud2
+Topic: /remote/lidar/points
+Reliability: Best Effort
+Durability: Volatile
+```
+
+The PointCloud2 publisher uses `sensor_data` QoS, so RViz2 must use `Best
+Effort`. A `Reliable` subscription can show the topic name while receiving no
+point-cloud messages.
+
+Run the complete Phase5 acceptance check:
+
+```bash
+cd ~/go2wireless_webrct/ubuntu_station
+./run_phase5_acceptance.sh
+```
+
+Confirm the RViz2 prompt with `y` only when the point cloud updates
+continuously. Success ends with:
+
+```text
+=========================
+PHASE5 PASSED
+=========================
+```
+
+To verify whether the bundled RViz configuration exists:
+
+```bash
+./save_lidar_rviz.sh
+```
+
+Phase5-C adds acceptance tooling and RViz configuration only. It does not
+modify communication, PointCloud2 data, TF publication, camera, telemetry, or
+robot control.
