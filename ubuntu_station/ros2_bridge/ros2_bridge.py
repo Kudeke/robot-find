@@ -1,3 +1,4 @@
+import base64
 import json
 import math
 import threading
@@ -8,7 +9,8 @@ from nav_msgs.msg import Odometry
 import rclpy
 from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.node import Node
-from sensor_msgs.msg import BatteryState, Imu
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import BatteryState, Imu, PointCloud2, PointField
 from std_msgs.msg import String
 from tf2_ros import TransformBroadcaster
 
@@ -25,6 +27,11 @@ class Ros2Bridge:
             BatteryState,
             "/battery_state",
             10,
+        )
+        self.lidar_publisher = self.node.create_publisher(
+            PointCloud2,
+            "/remote/lidar/points",
+            qos_profile_sensor_data,
         )
         self.camera_bridge = CameraBridge(self.node)
         self.tf_broadcaster = TransformBroadcaster(self.node)
@@ -140,6 +147,49 @@ class Ros2Bridge:
 
     def publish_camera_jpeg(self, jpeg_bytes, camera="color"):
         self.camera_bridge.publish_jpeg(jpeg_bytes, camera=camera)
+
+    def publish_lidar_points(self, payload):
+        stamp = payload.get("stamp", {})
+        fields = payload.get("fields", [])
+        data_base64 = payload.get("data_base64")
+
+        if not isinstance(stamp, dict):
+            raise ValueError("lidar stamp must be an object")
+        if not isinstance(fields, list):
+            raise ValueError("lidar fields must be a list")
+        if not isinstance(data_base64, str):
+            raise ValueError("lidar data_base64 must be a string")
+
+        try:
+            data = base64.b64decode(data_base64, validate=True)
+        except Exception as exc:
+            raise ValueError(f"invalid lidar data_base64: {exc}") from exc
+
+        msg = PointCloud2()
+        msg.header.frame_id = str(payload.get("frame_id", ""))
+        msg.header.stamp.sec = int(stamp.get("sec", 0))
+        msg.header.stamp.nanosec = int(stamp.get("nanosec", 0))
+        msg.height = int(payload.get("height", 0))
+        msg.width = int(payload.get("width", 0))
+        msg.fields = []
+
+        for field_payload in fields:
+            if not isinstance(field_payload, dict):
+                raise ValueError("lidar field must be an object")
+            field = PointField()
+            field.name = str(field_payload.get("name", ""))
+            field.offset = int(field_payload.get("offset", 0))
+            field.datatype = int(field_payload.get("datatype", 0))
+            field.count = int(field_payload.get("count", 0))
+            msg.fields.append(field)
+
+        msg.is_bigendian = bool(payload.get("is_bigendian", False))
+        msg.point_step = int(payload.get("point_step", 0))
+        msg.row_step = int(payload.get("row_step", 0))
+        msg.data = data
+        msg.is_dense = bool(payload.get("is_dense", False))
+        self.lidar_publisher.publish(msg)
+        return len(data)
 
     def _on_cmd_vel(self, msg):
         print(

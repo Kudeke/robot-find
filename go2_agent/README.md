@@ -552,3 +552,82 @@ python3 tools/probe_camera_ws.py
 Phase4-E does not use WebRTC, SLAM, YOLO, or VLN and does not control the
 robot. GO2-local ROS2 image data is converted to JPEG; only the JPEG Base64
 payload is transported over WebSocket.
+
+## Phase5-A GO2 LiDAR DDS Probe
+
+Phase5-A only inspects ROS2 Foxy topics that are already available on GO2. It
+does not start a LiDAR node or driver, change DDS configuration, send data over
+WebSocket, or control the robot.
+
+List all typed topics, automatically find LiDAR candidates, print topic
+information, and measure each candidate for five seconds:
+
+```bash
+cd ~/go2_agent
+./tools/probe_lidar_topics.sh
+```
+
+Print the ROS2 message definition for every discovered candidate:
+
+```bash
+./tools/inspect_lidar_messages.sh
+```
+
+Echo one message from every discovered `sensor_msgs/msg/PointCloud2` topic:
+
+```bash
+./tools/echo_lidar.sh
+```
+
+Echo one message from every discovered `sensor_msgs/msg/LaserScan` topic:
+
+```bash
+./tools/echo_scan.sh
+```
+
+Candidates are selected by the `LaserScan`, `PointCloud2`, or `PointCloud`
+message type, or by topic names containing `scan`, `cloud`, `point`, `lidar`,
+`utlidar`, `velodyne`, or `livox`.
+
+Safety boundary:
+
+```text
+read-only ROS2 topic and interface inspection
+no node or driver startup
+no DDS modification
+no main.py, ws_client.py, or protocol.py integration
+no WebSocket transmission
+no robot control
+```
+
+## Phase5-B LiDAR PointCloud2 WebSocket Bridge
+
+Phase5-B reads the existing GO2-local `/utlidar/cloud` topic and sends at most
+five PointCloud2 frames per second through the existing WebSocket connection.
+DDS remains local to GO2; WiFi carries only JSON with Base64 point data.
+
+Configuration:
+
+```yaml
+lidar_enabled: true
+lidar_topic: "/utlidar/cloud"
+lidar_rate_hz: 5.0
+```
+
+Start Ubuntu Station, then run GO2 Agent:
+
+```bash
+cd ~/go2_agent
+./run_go2_agent.sh
+```
+
+Expected GO2 output:
+
+```text
+[GO2] lidar source=real_dds PointCloud2
+[GO2] send lidar_points seq=... width=... bytes=...
+```
+
+This bridge is read-only. It reuses the existing DDS Node, does not initialize
+another ROS2 context, does not transport DDS over WiFi, and does not call any
+robot control API.

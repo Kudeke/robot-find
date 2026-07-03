@@ -85,6 +85,18 @@ def make_camera_frame(seq, connection_id, frame):
     return json.dumps(message, separators=(",", ":"))
 
 
+def make_lidar_points(seq, connection_id, pointcloud_payload):
+    message = {
+        "type": "lidar_points",
+        "version": VERSION,
+        "seq": int(seq),
+        "timestamp_ns": now_ns(),
+        "connection_id": str(connection_id),
+        "payload": dict(pointcloud_payload),
+    }
+    return json.dumps(message, separators=(",", ":"))
+
+
 def parse_message(raw):
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8")

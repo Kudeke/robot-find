@@ -404,3 +404,55 @@ are available, and the operator confirms the RViz2 image. Success ends with:
 PHASE4 PASSED
 =========================
 ```
+
+## Phase5-B LiDAR PointCloud2 Acceptance
+
+Phase5-B restores the GO2 `/utlidar/cloud` WebSocket payload as:
+
+```text
+/remote/lidar/points
+sensor_msgs/msg/PointCloud2
+```
+
+Terminal 1, start Ubuntu Station:
+
+```bash
+cd ~/go2wireless_webrct/ubuntu_station
+./run_station.sh
+```
+
+Terminal 2, start GO2 Agent on GO2:
+
+```bash
+cd ~/go2_agent
+./run_go2_agent.sh
+```
+
+Terminal 3, verify the restored point cloud on Ubuntu:
+
+```bash
+cd ~/go2wireless_webrct/ubuntu_station
+./check_lidar_pipeline.sh
+```
+
+The check must report:
+
+```text
+[PASS] lidar topic exists
+[PASS] lidar frequency
+[PASS] lidar echo
+```
+
+To inspect messages continuously:
+
+```bash
+./echo_lidar.sh
+```
+
+In RViz2, set `Fixed Frame` to `utlidar_lidar`, add a `PointCloud2` display,
+and select `/remote/lidar/points`. The source frame is intentionally preserved;
+no odom-to-LiDAR TF is added in this phase.
+
+Phase5-B does not control the robot and does not change battery, IMU, odometry,
+TF, RobotState, camera, cmd_vel, or NativeStopController behavior. DDS remains
+local to GO2; only PointCloud2 JSON/Base64 travels over WebSocket.

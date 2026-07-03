@@ -13,6 +13,7 @@ from protocol import (
     make_camera_frame,
     make_heartbeat,
     make_imu,
+    make_lidar_points,
     make_odom,
     make_robot_state,
     parse_message,
@@ -31,6 +32,7 @@ class WebSocketClient:
         odom_source=None,
         state_source=None,
         camera_source=None,
+        lidar_source=None,
         dds_node=None,
     ):
         self.server_url = config.get("server_url", "ws://192.168.41.1:8765/go2")
@@ -44,6 +46,7 @@ class WebSocketClient:
         self.imu_source = imu_source if imu_source is not None else MockImuSource()
         self.battery_source = battery_source
         self.camera_source = camera_source
+        self.lidar_source = lidar_source
         self.dds_node = dds_node
         self.safety_limiter = SafetyLimiter(
             max_vx=config.get("max_vx", 0.5),
@@ -86,6 +89,10 @@ class WebSocketClient:
         if camera_rate_hz <= 0.0:
             raise ValueError("camera_rate_hz must be greater than 0")
         self.camera_interval_sec = 1.0 / camera_rate_hz
+        lidar_rate_hz = float(config.get("lidar_rate_hz", 5.0))
+        if lidar_rate_hz <= 0.0:
+            raise ValueError("lidar_rate_hz must be greater than 0")
+        self.lidar_interval_sec = 1.0 / lidar_rate_hz
         self._stopping = False
 
     async def run_forever(self):
@@ -124,6 +131,7 @@ class WebSocketClient:
         imu_sender = asyncio.create_task(self._imu_loop(websocket))
         battery_sender = asyncio.create_task(self._battery_loop(websocket))
         camera_sender = asyncio.create_task(self._camera_loop(websocket))
+        lidar_sender = asyncio.create_task(self._lidar_loop(websocket))
         dds_spinner = asyncio.create_task(self._dds_spin_loop())
         timeout_checker = asyncio.create_task(self._command_timeout_loop())
         receiver = asyncio.create_task(self._receive_loop(websocket))
@@ -136,6 +144,7 @@ class WebSocketClient:
                     imu_sender,
                     battery_sender,
                     camera_sender,
+                    lidar_sender,
                     dds_spinner,
                     timeout_checker,
                     receiver,
@@ -159,6 +168,7 @@ class WebSocketClient:
                 imu_sender,
                 battery_sender,
                 camera_sender,
+                lidar_sender,
                 dds_spinner,
                 timeout_checker,
                 receiver,
@@ -172,6 +182,7 @@ class WebSocketClient:
                 imu_sender,
                 battery_sender,
                 camera_sender,
+                lidar_sender,
                 dds_spinner,
                 timeout_checker,
                 receiver,
@@ -250,6 +261,28 @@ class WebSocketClient:
                         f"height={frame.get('height')}"
                     )
             await asyncio.sleep(self.camera_interval_sec)
+
+    async def _lidar_loop(self, websocket):
+        while not self._stopping:
+            if self.lidar_source is not None:
+                pointcloud = self.lidar_source.get_pointcloud_json()
+                if pointcloud is not None:
+                    seq = self._next_seq()
+                    message = make_lidar_points(
+                        seq,
+                        self.connection_id,
+                        pointcloud,
+                    )
+                    await websocket.send(message)
+                    data_base64 = pointcloud.get("data_base64", "")
+                    padding = len(data_base64) - len(data_base64.rstrip("="))
+                    byte_count = len(data_base64) * 3 // 4 - padding
+                    print(
+                        f"[GO2] send lidar_points seq={seq} "
+                        f"width={pointcloud.get('width')} "
+                        f"bytes={byte_count}"
+                    )
+            await asyncio.sleep(self.lidar_interval_sec)
 
     async def _dds_spin_loop(self):
         while not self._stopping:

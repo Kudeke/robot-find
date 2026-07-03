@@ -64,6 +64,8 @@ class WebSocketServer:
                         self._handle_battery(remote_ip, msg)
                     elif msg_type == "camera_frame":
                         self._handle_camera_frame(remote_ip, msg)
+                    elif msg_type == "lidar_points":
+                        self._handle_lidar_points(remote_ip, msg)
                     else:
                         raise ValueError(f"unsupported message type: {msg_type}")
                 except Exception as exc:
@@ -171,6 +173,23 @@ class WebSocketServer:
             f"width={payload.get('width')} "
             f"height={payload.get('height')} "
             f"jpeg_bytes={len(jpeg_bytes)}"
+        )
+
+    def _handle_lidar_points(self, remote_ip, msg):
+        validate_message(msg, expected_type="lidar_points")
+        payload = msg["payload"]
+        data_base64 = payload.get("data_base64")
+        if not isinstance(data_base64, str):
+            raise ValueError("lidar data_base64 must be a string")
+
+        byte_count = 0
+        if self.ros2_bridge is not None:
+            byte_count = self.ros2_bridge.publish_lidar_points(payload)
+
+        print(
+            f"[HOST] lidar_points from {remote_ip} "
+            f"width={payload.get('width')} "
+            f"bytes={byte_count}"
         )
 
     def send_cmd_vel(self, cmd_dict):

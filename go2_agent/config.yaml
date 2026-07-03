@@ -27,3 +27,7 @@ camera_enabled: true
 camera_topic: "/camera/camera/color/image_raw"
 camera_rate_hz: 1.0
 camera_jpeg_quality: 70
+
+lidar_enabled: true
+lidar_topic: "/utlidar/cloud"
+lidar_rate_hz: 5.0

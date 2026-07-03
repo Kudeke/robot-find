@@ -22,6 +22,7 @@ async def async_main():
     odom_mode = str(config.get("odom_source", "mock"))
     state_mode = str(config.get("state_source", "mock"))
     camera_enabled = bool(config.get("camera_enabled", False))
+    lidar_enabled = bool(config.get("lidar_enabled", False))
     dds_node = None
     owns_rclpy = False
     client = None
@@ -33,6 +34,7 @@ async def async_main():
             or odom_mode == "real_dds"
             or state_mode == "real_dds"
             or camera_enabled
+            or lidar_enabled
         ):
             import rclpy
 
@@ -103,6 +105,16 @@ async def async_main():
             )
             print("[GO2] camera source=color JPEG")
 
+        lidar_source = None
+        if lidar_enabled:
+            from lidar_source import RealDdsPointCloudSource
+
+            lidar_source = RealDdsPointCloudSource(
+                dds_node,
+                topic=config.get("lidar_topic", "/utlidar/cloud"),
+            )
+            print("[GO2] lidar source=real_dds PointCloud2")
+
         client = WebSocketClient(
             config,
             battery_source=battery_source,
@@ -110,6 +122,7 @@ async def async_main():
             odom_source=odom_source,
             state_source=state_source,
             camera_source=camera_source,
+            lidar_source=lidar_source,
             dds_node=dds_node,
         )
         await client.run_forever()
