@@ -1,0 +1,4 @@
+server_url: "ws://172.20.10.6:8765/go2"
+heartbeat_interval_sec: 1.0
+reconnect_interval_sec: 2.0
+log_level: "INFO"

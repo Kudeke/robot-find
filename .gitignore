@@ -1,13 +1,45 @@
-__pycache__/
-*.py[cod]
-*$py.class
-
+# Python
+__pycache__
+*.pyc
+*.egg-info
+dist
 .venv/
 venv/
-env/
-log/
-unitree@*/
+ubuntu_station/venv/
 
+# Log
+*.log
+*.log.*
+*.jsonl
+
+# Data
+!**/alpaca-data-conversation.json
+
+# Editor
+.idea
+*.swp
+
+# Other
 .DS_Store
-.idea/
-.vscode/
+wandb
+output
+work_dirs
+data
+model_zoo
+hf_download
+
+test_cases
+
+checkpoints
+ckpts*
+
+.ipynb_checkpoints
+*.ipynb
+
+# Local runtime state
+.cache/
+ubuntu_station/log/
+\[38
+
+# DevContainer
+!.devcontainer/*
