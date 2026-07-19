@@ -39,6 +39,7 @@ ckpts*
 # Local runtime state
 .cache/
 ubuntu_station/log/
+go2_agent/native/build/
 \[38
 
 # DevContainer

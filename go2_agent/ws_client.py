@@ -4,8 +4,9 @@ import uuid
 
 import websockets
 
-from controller import DryRunController, SafeController
+from controller import DryRunController, NativeDaemonController, SafeController
 from imu_source import MockImuSource
+from native_motion_controller import NativeMotionController
 from native_stop_controller import NativeStopController
 from odom_source import MockOdomSource
 from protocol import (
@@ -34,6 +35,7 @@ class WebSocketClient:
         camera_source=None,
         lidar_source=None,
         dds_node=None,
+        controller=None,
     ):
         self.server_url = config.get("server_url", "ws://192.168.41.1:8765/go2")
         self.heartbeat_interval_sec = float(config.get("heartbeat_interval_sec", 1.0))
@@ -53,18 +55,7 @@ class WebSocketClient:
             max_vy=config.get("max_vy", 0.3),
             max_yaw_rate=config.get("max_yaw_rate", 0.8),
         )
-        native_stop_controller = None
-        if config.get("native_stop_enabled", True):
-            native_stop_controller = NativeStopController(
-                helper_path=config.get("native_stop_helper_path", "./native/build/go2_sport_helper"),
-                network_interface=config.get("native_stop_interface", "wlan0"),
-                enabled=config.get("native_stop_enabled", True),
-                timeout_sec=config.get("native_stop_timeout_sec", 5.0),
-            )
-        self.controller = SafeController(
-            dry_run_controller=DryRunController(dry_run=config.get("dry_run", True)),
-            native_stop_controller=native_stop_controller,
-        )
+        self.controller = controller if controller is not None else self._build_legacy_controller(config)
         self.command_timeout_sec = float(config.get("command_timeout_sec", 0.5))
         self.last_cmd_time = None
         self.last_motion_command = None
@@ -94,6 +85,43 @@ class WebSocketClient:
             raise ValueError("lidar_rate_hz must be greater than 0")
         self.lidar_interval_sec = 1.0 / lidar_rate_hz
         self._stopping = False
+        self._controller_closed = False
+
+    def _build_legacy_controller(self, config):
+        native_stop_controller = None
+        if config.get("native_stop_enabled", True):
+            native_stop_controller = NativeStopController(
+                helper_path=config.get("native_stop_helper_path", "./native/build/go2_sport_helper"),
+                network_interface=config.get("native_stop_interface", "wlan0"),
+                enabled=config.get("native_stop_enabled", True),
+                timeout_sec=config.get("native_stop_timeout_sec", 5.0),
+            )
+        controller_mode = str(config.get("controller_mode", "dry_run"))
+        if controller_mode == "dry_run":
+            print("[GO2] controller_mode=dry_run")
+            return SafeController(
+                dry_run_controller=DryRunController(dry_run=config.get("dry_run", True)),
+                native_stop_controller=native_stop_controller,
+            )
+        if controller_mode == "native_daemon":
+            print("[GO2] controller_mode=native_daemon")
+            native_motion_controller = NativeMotionController(
+                socket_path=config.get("native_motion_socket", "/tmp/go2_motion_daemon.sock"),
+                connect_timeout_sec=config.get("native_motion_connect_timeout_sec", 2.0),
+                request_timeout_sec=config.get("native_motion_request_timeout_sec", 1.0),
+                fallback_stop_controller=native_stop_controller,
+            )
+            return NativeDaemonController(
+                motion_controller=native_motion_controller,
+                fallback_stop_controller=native_stop_controller,
+            )
+        raise ValueError(f"unsupported controller_mode: {controller_mode}")
+
+    def _safe_controller_stop(self, reason):
+        try:
+            self.controller.stop()
+        except Exception as exc:
+            print(f"[GO2][SAFETY][ERROR] controller.stop failed during {reason}: {exc}")
 
     async def run_forever(self):
         while not self._stopping:
@@ -109,7 +137,7 @@ class WebSocketClient:
             except KeyboardInterrupt:
                 self._stopping = True
                 print("[GO2][SAFETY] keyboard interrupt, stop")
-                self.controller.stop()
+                self._safe_controller_stop("keyboard interrupt")
                 break
             except Exception as exc:
                 print(f"[GO2] connection error: {exc}")
@@ -158,7 +186,7 @@ class WebSocketClient:
         finally:
             if self.last_cmd_time is not None:
                 print("[GO2][SAFETY] websocket disconnected, stop")
-                self.controller.stop()
+                self._safe_controller_stop("websocket disconnected")
                 self.stop_sent = True
 
             for task in (
@@ -297,7 +325,7 @@ class WebSocketClient:
             if self.last_cmd_time is not None:
                 elapsed = time.monotonic() - self.last_cmd_time
                 if elapsed > self.command_timeout_sec and not self.stop_sent:
-                    self.controller.stop()
+                    self._safe_controller_stop("command timeout")
                     self.stop_sent = True
             await asyncio.sleep(0.05)
 
@@ -327,12 +355,22 @@ class WebSocketClient:
         vx, vy, yaw_rate = self.safety_limiter.limit_cmd(vx, vy, yaw_rate)
         self.last_motion_command = (vx, vy, yaw_rate)
         self.stop_sent = self.safety_limiter.is_zero_cmd(vx, vy, yaw_rate)
-        self.controller.move(vx, vy, yaw_rate)
+        try:
+            self.controller.move(vx, vy, yaw_rate)
+        except Exception as exc:
+            print(f"[GO2][SAFETY][ERROR] controller.move failed: {exc}")
+            self._safe_controller_stop("move failure")
 
     async def close(self):
         self._stopping = True
         print("[GO2][SAFETY] client closing, stop")
-        self.controller.stop()
+        self._safe_controller_stop("client closing")
+        if hasattr(self.controller, "close") and not self._controller_closed:
+            self._controller_closed = True
+            try:
+                self.controller.close()
+            except Exception as exc:
+                print(f"[GO2] controller close error: {exc}")
         websocket = self.websocket
         self.websocket = None
         if websocket is not None:

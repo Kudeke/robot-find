@@ -1,5 +1,70 @@
 # GO2 Agent
 
+## Native Motion Daemon
+
+The native motion daemon is a GO2-local Unix socket bridge to Unitree SDK2
+`SportClient`.
+
+Default mode is safe:
+
+- `Move` is DRYRUN only.
+- SDK2 is not initialized in daemon DRYRUN mode.
+- Daemon `StopMove` is skipped in DRYRUN mode; the existing
+  `NativeStopController` remains available as the separate real stop fallback.
+- The daemon listens only on `/tmp/go2_motion_daemon.sock`.
+- It does not open TCP, UDP, WebSocket, or any remote network listener.
+
+Build on GO2:
+
+```bash
+cd ~/go2_agent/native
+./build_helper.sh
+```
+
+Start daemon in default DRYRUN mode:
+
+```bash
+cd ~/go2_agent/native
+./run_motion_daemon.sh
+```
+
+Daemon dry-run test:
+
+```bash
+cd ~/go2_agent/native
+./test_motion_daemon.sh
+```
+
+Python controller dry-run test, with daemon already running:
+
+```bash
+cd ~/go2_agent
+python3 test_native_motion_controller.py
+```
+
+The Python agent remains in DryRun by default:
+
+```yaml
+controller_mode: "dry_run"
+```
+
+The optional native daemon mode is only enabled by changing config:
+
+```yaml
+controller_mode: "native_daemon"
+native_motion_socket: "/tmp/go2_motion_daemon.sock"
+```
+
+Real Move is prepared but must not be used in this phase. It requires explicit
+operator acknowledgement and strict low-speed limits:
+
+```bash
+GO2_REAL_MOVE_ACK=YES ./run_motion_daemon.sh --enable-real-move
+```
+
+This phase forbids running real mode unless a later phase explicitly starts a
+supervised real-motion test with on-site safety preparation.
+
 Phase1-A minimal WebSocket heartbeat client for Unitree GO2 EDU.
 
 This project does not use ROS2, Unitree SDK2, OpenCV, camera input, or robot control.
@@ -631,3 +696,147 @@ Expected GO2 output:
 This bridge is read-only. It reuses the existing DDS Node, does not initialize
 another ROS2 context, does not transport DDS over WiFi, and does not call any
 robot control API.
+
+## GO2 Agent → Native Motion Daemon dryrun integration
+
+This stage routes GO2 Agent motion commands to the local Native Motion Daemon
+over a Unix Domain Socket, while the daemon remains in DRYRUN mode.
+
+Safety boundary:
+
+```text
+daemon must be started without --enable-real-move
+daemon status must report real_move_enabled=false
+allow_real_move_daemon must remain false
+SportClient.Move is not called in this stage
+the robot must remain physically stationary
+```
+
+Start the daemon on GO2:
+
+```bash
+cd ~/go2_agent/native
+./run_motion_daemon.sh
+```
+
+In another GO2 terminal, check the daemon:
+
+```bash
+cd ~/go2_agent
+./tools/check_native_daemon_ready.sh
+```
+
+Temporarily switch `config.yaml` for this integration test:
+
+```yaml
+controller_mode: "native_daemon"
+allow_real_move_daemon: false
+native_motion_socket: "/tmp/go2_motion_daemon.sock"
+```
+
+Run the local dryrun integration test:
+
+```bash
+cd ~/go2_agent
+python3 test_agent_native_daemon_dryrun.py
+```
+
+Optional acceptance helper:
+
+```bash
+./run_native_daemon_agent_acceptance.sh
+```
+
+Then start GO2 Agent:
+
+```bash
+./run_go2_agent.sh
+```
+
+Expected logs after a `/cmd_vel` command arrives:
+
+```text
+[GO2] recv cmd_vel seq=...
+[GO2][NATIVE_DAEMON] move vx=... vy=... yaw_rate=...
+[GO2][NATIVE_DAEMON] move ack seq=... real_move=false
+```
+
+The daemon terminal should show:
+
+```text
+[MOTION_DAEMON][DRYRUN] move ...
+```
+
+Do not set `GO2_REAL_MOVE_ACK=YES` and do not pass `--enable-real-move` during
+this stage.
+
+## GO2 REAL MOVE ACCEPTANCE
+
+This is the first real SDK2 `SportClient.Move()` test in this project.
+
+It intentionally bypasses:
+
+```text
+Uni-NaVid
+WebSocket
+Safety Gate
+Native Motion Daemon
+```
+
+The test directly calls SDK2:
+
+```text
+ChannelFactory::Init
+SportClient::Init
+SportClient::SwitchJoystick(false)
+SportClient::StandUp
+SportClient::BalanceStand
+SportClient::SpeedLevel(1)
+SportClient::ClassicWalk(true)
+SportClient::Move(0.05, 0.0, 0.0) repeated at 20 Hz for 1.0 second
+SportClient::StopMove
+SportClient::ClassicWalk(false)
+SportClient::SwitchJoystick(true)
+```
+
+Expected real motion:
+
+```text
+forward
+0.05 m/s
+1.0 second
+about 5 cm
+```
+
+Build on GO2:
+
+```bash
+cd ~/go2_agent/native
+./build_helper.sh
+```
+
+Run only in an open area with emergency stop ready:
+
+```bash
+export GO2_REAL_MOVE_ACK=YES
+./run_real_move_acceptance.sh
+```
+
+The program prints a warning and waits for exact manual input:
+
+```text
+YES
+```
+
+If the input is anything else, it exits without moving.
+
+See:
+
+```bash
+go2_agent/native/test_real_move_acceptance.md
+```
+
+This acceptance test does not modify or depend on the dryrun controller,
+Native Motion Daemon, Safety Gate, WebSocket path, or Uni-NaVid.
+It temporarily disables joystick control during the short real-move window and
+restores joystick control on normal exit, cancellation, or exception cleanup.

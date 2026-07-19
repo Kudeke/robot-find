@@ -4,6 +4,33 @@ Phase1-A minimal WebSocket heartbeat server for Ubuntu 24.04.
 
 This project does not use ROS2, Unitree SDK2, OpenCV, camera input, or robot control.
 
+## Uni-NaVid Client
+
+The Uni-NaVid client subscribes to `/remote/camera/color/compressed`, sends the
+latest JPEG frame to the Uni-NaVid WebSocket server, then prints and publishes
+the returned action sequence on `/vln/uninavid/actions`.
+
+It only publishes a debug `std_msgs/msg/String` topic. It does not control GO2
+or send motion commands.
+
+Start the client after the Ubuntu station camera topic and the server-side
+Uni-NaVid realtime service are running:
+
+```bash
+cd ~/go2_uninavid/ubuntu_station
+./run_uninavid_client.sh \
+  --server-url ws://141.3.14.42:19000 \
+  --instruction "Walk toward the door and stop." \
+  --rate-hz 1.0
+```
+
+Check the debug action topic from another Ubuntu terminal:
+
+```bash
+cd ~/go2_uninavid/ubuntu_station
+./check_uninavid_client.sh
+```
+
 ## Run on Ubuntu
 
 ```bash

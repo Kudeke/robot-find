@@ -6,11 +6,16 @@ max_vx: 0.5
 max_vy: 0.3
 max_yaw_rate: 0.8
 dry_run: true
+controller_mode: "dry_run"
 command_timeout_sec: 0.5
 native_stop_enabled: true
 native_stop_helper_path: "./native/build/go2_sport_helper"
 native_stop_interface: "wlan0"
 native_stop_timeout_sec: 15.0
+native_motion_socket: "/tmp/go2_motion_daemon.sock"
+native_motion_connect_timeout_sec: 2.0
+native_motion_request_timeout_sec: 1.0
+allow_real_move_daemon: false
 battery_source: "real_dds"
 battery_topic: "/lf/lowstate"
 battery_rate_hz: 1.0

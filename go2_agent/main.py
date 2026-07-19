@@ -4,7 +4,10 @@ import sys
 import yaml
 
 from battery_source import MockBatterySource, RealDdsBatterySource
+from controller import DryRunController, NativeDaemonController, SafeController
 from imu_source import MockImuSource, RealDdsImuSource
+from native_motion_controller import NativeMotionController
+from native_stop_controller import NativeStopController
 from odom_source import MockOdomSource, RealDdsOdomSource
 from state_source import MockStateSource, RealDdsRobotStateSource
 from ws_client import WebSocketClient
@@ -13,6 +16,61 @@ from ws_client import WebSocketClient
 def load_config(path="config.yaml"):
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
+
+
+def build_native_stop_controller(config):
+    if not config.get("native_stop_enabled", True):
+        return None
+    return NativeStopController(
+        helper_path=config.get("native_stop_helper_path", "./native/build/go2_sport_helper"),
+        network_interface=config.get("native_stop_interface", "wlan0"),
+        enabled=config.get("native_stop_enabled", True),
+        timeout_sec=config.get("native_stop_timeout_sec", 5.0),
+    )
+
+
+def build_controller(config):
+    controller_mode = str(config.get("controller_mode", "dry_run"))
+    native_stop_controller = build_native_stop_controller(config)
+
+    if controller_mode == "dry_run":
+        print("[GO2] controller_mode=dry_run")
+        return SafeController(
+            dry_run_controller=DryRunController(dry_run=config.get("dry_run", True)),
+            native_stop_controller=native_stop_controller,
+        )
+
+    if controller_mode == "native_daemon":
+        print("[GO2] controller_mode=native_daemon")
+        motion_controller = NativeMotionController(
+            socket_path=config.get("native_motion_socket", "/tmp/go2_motion_daemon.sock"),
+            connect_timeout_sec=config.get("native_motion_connect_timeout_sec", 2.0),
+            request_timeout_sec=config.get("native_motion_request_timeout_sec", 1.0),
+            fallback_stop_controller=native_stop_controller,
+        )
+        if not motion_controller.connect():
+            raise RuntimeError("native_daemon mode requires a running motion daemon")
+
+        status = motion_controller.status()
+        print(f"[GO2][NATIVE_DAEMON] daemon status: {status}")
+        if status.get("type") != "status" or not status.get("connected", False):
+            raise RuntimeError(f"motion daemon status check failed: {status}")
+
+        real_move_enabled = bool(status.get("real_move_enabled", False))
+        allow_real_move_daemon = bool(config.get("allow_real_move_daemon", False))
+        if real_move_enabled and not allow_real_move_daemon:
+            motion_controller.close()
+            raise RuntimeError(
+                "motion daemon reports real_move_enabled=true, "
+                "but allow_real_move_daemon=false"
+            )
+
+        return NativeDaemonController(
+            motion_controller=motion_controller,
+            fallback_stop_controller=native_stop_controller,
+        )
+
+    raise ValueError(f"unsupported controller_mode: {controller_mode}")
 
 
 async def async_main():
@@ -26,8 +84,11 @@ async def async_main():
     dds_node = None
     owns_rclpy = False
     client = None
+    controller = None
 
     try:
+        controller = build_controller(config)
+
         if (
             battery_mode == "real_dds"
             or imu_mode == "real_dds"
@@ -117,6 +178,7 @@ async def async_main():
 
         client = WebSocketClient(
             config,
+            controller=controller,
             battery_source=battery_source,
             imu_source=imu_source,
             odom_source=odom_source,
@@ -129,6 +191,8 @@ async def async_main():
     finally:
         if client is not None:
             await client.close()
+        elif controller is not None and hasattr(controller, "close"):
+            controller.close()
         if dds_node is not None:
             dds_node.destroy_node()
         if owns_rclpy:
@@ -145,6 +209,7 @@ def main():
         print("[GO2] shutdown requested")
     except Exception as exc:
         print(f"[GO2] fatal error: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

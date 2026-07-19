@@ -78,3 +78,12 @@ configure_go2_helper(go2_sport_helper)
 
 add_executable(go2_state_helper go2_state_helper.cpp)
 configure_go2_helper(go2_state_helper)
+
+add_executable(go2_motion_daemon go2_motion_daemon.cpp)
+configure_go2_helper(go2_motion_daemon)
+
+add_executable(real_move_acceptance real_move_acceptance.cpp)
+configure_go2_helper(real_move_acceptance)
+
+add_executable(service_switch_probe service_switch_probe.cpp)
+configure_go2_helper(service_switch_probe)
