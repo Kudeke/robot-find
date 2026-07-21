@@ -1,6 +1,7 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -17,8 +18,19 @@ std::atomic<bool> g_joystick_disabled{false};
 unitree::robot::go2::SportClient *g_client = nullptr;
 
 struct Options {
-    std::string iface = "wlan0";
+    std::string iface = "eth0";
+    double vx = 0.30;
+    double duration_sec = 0.5;
 };
+
+double ParseDouble(const std::string &value, const std::string &name) {
+    char *end = nullptr;
+    const double parsed = std::strtod(value.c_str(), &end);
+    if (end == value.c_str() || *end != '\0') {
+        throw std::runtime_error("invalid numeric value for " + name + ": " + value);
+    }
+    return parsed;
+}
 
 void SignalHandler(int) {
     g_stop_requested.store(true);
@@ -45,17 +57,35 @@ Options ParseArgs(int argc, char **argv) {
                 throw std::runtime_error("--iface requires a value");
             }
             options.iface = argv[++i];
+        } else if (arg == "--vx") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("--vx requires a value");
+            }
+            options.vx = ParseDouble(argv[++i], "--vx");
+        } else if (arg == "--duration-sec") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("--duration-sec requires a value");
+            }
+            options.duration_sec = ParseDouble(argv[++i], "--duration-sec");
         } else if (arg == "--help" || arg == "-h") {
-            std::cout << "Usage: " << argv[0] << " [--iface wlan0]\n";
+            std::cout << "Usage: " << argv[0]
+                      << " [--iface eth0] [--vx 0.30] [--duration-sec 0.5]\n";
             std::exit(0);
         } else {
             throw std::runtime_error("unknown argument: " + arg);
         }
     }
+    if (options.vx <= 0.0 || options.vx > 0.50) {
+        throw std::runtime_error("--vx must be > 0.0 and <= 0.50");
+    }
+    if (options.duration_sec <= 0.0 || options.duration_sec > 7.0) {
+        throw std::runtime_error("--duration-sec must be > 0.0 and <= 7.0");
+    }
     return options;
 }
 
-bool ConfirmRealMove() {
+bool ConfirmRealMove(const Options &options) {
+    const double expected_distance = options.vx * options.duration_sec;
     std::cout
         << "==================================================\n"
         << "REAL GO2 MOVE TEST\n"
@@ -66,8 +96,9 @@ bool ConfirmRealMove() {
         << "Expected motion:\n"
         << "\n"
         << "forward\n"
-        << "0.05 m/s\n"
-        << "1.0 second\n"
+        << options.vx << " m/s\n"
+        << options.duration_sec << " second\n"
+        << "about " << expected_distance << " m\n"
         << "\n"
         << "Emergency stop must be available.\n"
         << "\n"
@@ -127,7 +158,7 @@ int Run(const Options &options) {
 
     std::cout << "[REAL TEST] SDK2 initialized\n";
 
-    if (!ConfirmRealMove()) {
+    if (!ConfirmRealMove(options)) {
         std::cout << "[REAL TEST] cancelled\n";
         StopMoveQuietly(client);
         RestoreJoystickQuietly(client);
@@ -200,8 +231,12 @@ int Run(const Options &options) {
     }
 
     std::cout << "[REAL TEST] Move\n";
-    for (int i = 0; i < 20 && !g_stop_requested.load(); ++i) {
-        LogSdkRet("Move", client.Move(0.05f, 0.0f, 0.0f));
+    const int move_iterations = static_cast<int>(options.duration_sec * 20.0);
+    std::cout << "[REAL TEST] Move vx=" << options.vx
+              << " duration_sec=" << options.duration_sec
+              << " iterations=" << move_iterations << "\n";
+    for (int i = 0; i < move_iterations && !g_stop_requested.load(); ++i) {
+        LogSdkRet("Move", client.Move(static_cast<float>(options.vx), 0.0f, 0.0f));
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 

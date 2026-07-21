@@ -19,7 +19,7 @@ ChannelFactory
 → BalanceStand
 → SpeedLevel(1)
 → ClassicWalk(true)
-→ Move(0.05, 0.0, 0.0)
+→ Move(vx, 0.0, 0.0)
 → StopMove
 → ClassicWalk(false)
 → SwitchJoystick(true)
@@ -45,6 +45,14 @@ ChannelFactory
    ./run_real_move_acceptance.sh
    ```
 
+   Optional parameters:
+
+   ```bash
+   GO2_REAL_MOVE_VX=0.50 \
+   GO2_REAL_MOVE_DURATION_SEC=7.0 \
+   ./run_real_move_acceptance.sh
+   ```
+
 7. The program waits for:
 
    ```text
@@ -61,8 +69,8 @@ ChannelFactory
 
    ```text
    stand up
-   move forward at 0.05 m/s for 1.0 second
-   travel approximately 5 cm
+   default: move forward at 0.30 m/s for 0.5 second
+   default: travel approximately 15 cm
    stop immediately
    ```
 

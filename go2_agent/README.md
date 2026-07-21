@@ -793,7 +793,7 @@ SportClient::StandUp
 SportClient::BalanceStand
 SportClient::SpeedLevel(1)
 SportClient::ClassicWalk(true)
-SportClient::Move(0.05, 0.0, 0.0) repeated at 20 Hz for 1.0 second
+SportClient::Move(vx, 0.0, 0.0) repeated at 20 Hz for duration-sec
 SportClient::StopMove
 SportClient::ClassicWalk(false)
 SportClient::SwitchJoystick(true)
@@ -803,9 +803,9 @@ Expected real motion:
 
 ```text
 forward
-0.05 m/s
-1.0 second
-about 5 cm
+default: 0.30 m/s
+default: 0.5 second
+default: about 15 cm
 ```
 
 Build on GO2:
@@ -819,6 +819,14 @@ Run only in an open area with emergency stop ready:
 
 ```bash
 export GO2_REAL_MOVE_ACK=YES
+./run_real_move_acceptance.sh
+```
+
+Optional parameters:
+
+```bash
+GO2_REAL_MOVE_VX=0.50 \
+GO2_REAL_MOVE_DURATION_SEC=7.0 \
 ./run_real_move_acceptance.sh
 ```
 
