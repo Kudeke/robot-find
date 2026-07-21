@@ -31,6 +31,68 @@ cd ~/go2_uninavid/ubuntu_station
 ./check_uninavid_client.sh
 ```
 
+## Manual `/cmd_vel` real move acceptance
+
+After GO2 direct SDK2 real Move, daemon real Move, and GO2 Agent → daemon real
+Move have passed, use this stage to verify the remote WebSocket downlink can
+route a manually published Ubuntu `/cmd_vel` to real GO2 motion.
+
+This test does not use Uni-NaVid or the Action Translator. It manually publishes
+to `/cmd_vel`.
+
+Required GO2 side:
+
+```bash
+cd ~/go2_agentuninavid/native
+export GO2_REAL_MOVE_ACK=YES
+GO2_MOTION_MAX_VX=0.50 ./run_motion_daemon.sh --enable-real-move
+```
+
+In another GO2 terminal, run GO2 Agent with:
+
+```yaml
+controller_mode: "native_daemon"
+allow_real_move_daemon: true
+```
+
+Then:
+
+```bash
+cd ~/go2_agentuninavid
+./run_go2_agent.sh
+```
+
+Ubuntu side:
+
+```bash
+cd ~/go2_uninavid/ubuntu_station
+./run_station.sh
+```
+
+In another Ubuntu terminal:
+
+```bash
+cd ~/go2_uninavid/ubuntu_station
+./test_manual_cmd_vel_real.sh
+```
+
+Defaults:
+
+```text
+linear.x=0.30 m/s
+angular.z=0.0 rad/s
+duration=2.0 s
+rate=10 Hz
+```
+
+Optional parameters:
+
+```bash
+GO2_MANUAL_REAL_VX=0.30 \
+GO2_MANUAL_REAL_DURATION_SEC=2.0 \
+./test_manual_cmd_vel_real.sh
+```
+
 ## Run on Ubuntu
 
 ```bash

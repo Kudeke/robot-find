@@ -848,3 +848,108 @@ This acceptance test does not modify or depend on the dryrun controller,
 Native Motion Daemon, Safety Gate, WebSocket path, or Uni-NaVid.
 It temporarily disables joystick control during the short real-move window and
 restores joystick control on normal exit, cancellation, or exception cleanup.
+
+## GO2 Native Motion Daemon REAL MOVE acceptance
+
+After direct SDK2 real Move is validated, the next safety step is to route the
+same short supervised motion through the GO2-local Unix Socket daemon.
+
+This still does not use:
+
+```text
+Uni-NaVid
+WebSocket
+Safety Gate
+Ubuntu Station
+```
+
+The daemon real-mode startup prepares the same gait path used by direct
+acceptance:
+
+```text
+SwitchJoystick(false)
+StandUp
+BalanceStand
+SpeedLevel(1)
+ClassicWalk(true)
+```
+
+On shutdown it calls:
+
+```text
+StopMove
+ClassicWalk(false)
+SwitchJoystick(true)
+```
+
+Build on GO2:
+
+```bash
+cd ~/go2_agent/native
+./build_helper.sh
+```
+
+Run the supervised daemon real acceptance:
+
+```bash
+export GO2_REAL_MOVE_ACK=YES
+./test_motion_daemon_real_acceptance.sh
+```
+
+Defaults:
+
+```text
+vx=0.30 m/s
+duration=0.5 s
+socket=/tmp/go2_motion_daemon_real_test.sock
+iface=eth0
+```
+
+Optional parameters:
+
+```bash
+GO2_REAL_DAEMON_VX=0.30 \
+GO2_REAL_DAEMON_DURATION_SEC=2.0 \
+./test_motion_daemon_real_acceptance.sh
+```
+
+The daemon real path must pass before connecting WebSocket, Safety Gate, or
+Uni-NaVid to real robot motion.
+
+## GO2 Agent → Native Motion Daemon REAL MOVE acceptance
+
+After daemon real Move passes, verify the GO2 Agent controller layer can route
+real commands to the daemon without WebSocket, Ubuntu, Safety Gate, or
+Uni-NaVid.
+
+Start the daemon real mode on GO2:
+
+```bash
+cd ~/go2_agent/native
+export GO2_REAL_MOVE_ACK=YES
+GO2_MOTION_MAX_VX=0.50 ./run_motion_daemon.sh --enable-real-move
+```
+
+In another GO2 terminal:
+
+```bash
+cd ~/go2_agent
+export GO2_REAL_MOVE_ACK=YES
+python3 test_agent_native_daemon_real_acceptance.py
+```
+
+Defaults:
+
+```text
+vx=0.30 m/s
+duration=0.5 s
+socket=/tmp/go2_motion_daemon.sock
+```
+
+Optional parameters:
+
+```bash
+GO2_AGENT_REAL_VX=0.30 \
+GO2_AGENT_REAL_DURATION_SEC=2.0 \
+python3 test_agent_native_daemon_real_acceptance.py
+```

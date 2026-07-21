@@ -10,19 +10,25 @@ if [ ! -x "$SCRIPT_DIR/build/go2_motion_daemon" ]; then
     exit 1
 fi
 
-if ! ip link show wlan0 >/dev/null 2>&1; then
-    echo "[MOTION_DAEMON][ERROR] network interface wlan0 not found"
+GO2_MOTION_IFACE="${GO2_MOTION_IFACE:-eth0}"
+GO2_MOTION_SOCKET="${GO2_MOTION_SOCKET:-/tmp/go2_motion_daemon.sock}"
+GO2_MOTION_WATCHDOG_MS="${GO2_MOTION_WATCHDOG_MS:-500}"
+GO2_MOTION_MAX_VX="${GO2_MOTION_MAX_VX:-0.30}"
+GO2_MOTION_MAX_YAW="${GO2_MOTION_MAX_YAW:-0.30}"
+
+if ! ip link show "$GO2_MOTION_IFACE" >/dev/null 2>&1; then
+    echo "[MOTION_DAEMON][ERROR] network interface $GO2_MOTION_IFACE not found"
     exit 1
 fi
 
 echo "[MOTION_DAEMON] DEFAULT MODE: DRYRUN MOVE"
-echo "[MOTION_DAEMON] STOP remains active"
+echo "[MOTION_DAEMON] Real Move requires GO2_REAL_MOVE_ACK=YES and --enable-real-move"
 
 exec "$SCRIPT_DIR/build/go2_motion_daemon" \
-    --iface wlan0 \
-    --socket-path /tmp/go2_motion_daemon.sock \
-    --watchdog-ms 500 \
-    --max-vx 0.15 \
+    --iface "$GO2_MOTION_IFACE" \
+    --socket-path "$GO2_MOTION_SOCKET" \
+    --watchdog-ms "$GO2_MOTION_WATCHDOG_MS" \
+    --max-vx "$GO2_MOTION_MAX_VX" \
     --max-vy 0.0 \
-    --max-yaw 0.30 \
+    --max-yaw "$GO2_MOTION_MAX_YAW" \
     "$@"

@@ -29,10 +29,10 @@ namespace {
 std::atomic<bool> g_shutdown_requested{false};
 
 struct Options {
-    std::string iface = "wlan0";
+    std::string iface = "eth0";
     std::string socket_path = "/tmp/go2_motion_daemon.sock";
     int watchdog_ms = 500;
-    double max_vx = 0.15;
+    double max_vx = 0.30;
     double max_vy = 0.0;
     double max_yaw = 0.30;
     bool enable_real_move = false;
@@ -108,11 +108,11 @@ void ValidateRealMoveGuards(const Options &options) {
     if (ack == nullptr || std::string(ack) != "YES") {
         throw std::runtime_error("real move requires GO2_REAL_MOVE_ACK=YES");
     }
-    if (options.max_vx > 0.10 || options.max_vy != 0.0 ||
-        options.max_yaw > 0.20 || options.watchdog_ms > 500) {
+    if (options.max_vx > 0.50 || options.max_vy != 0.0 ||
+        options.max_yaw > 0.30 || options.watchdog_ms > 500) {
         throw std::runtime_error(
-            "real move refused: require max_vx<=0.10 max_vy==0 "
-            "max_yaw<=0.20 watchdog_ms<=500");
+            "real move refused: require max_vx<=0.50 max_vy==0 "
+            "max_yaw<=0.30 watchdog_ms<=500");
     }
     std::cout << "==================================================\n"
               << "WARNING: REAL GO2 MOVE ENABLED\n"
@@ -120,7 +120,7 @@ void ValidateRealMoveGuards(const Options &options) {
               << "- GO2 is in an open area\n"
               << "- emergency stop is available\n"
               << "- Safety Gate is disabled before startup\n"
-              << "- test only one short command\n"
+              << "- test only short supervised commands\n"
               << "==================================================\n";
 }
 
@@ -290,6 +290,35 @@ private:
         sport_client_->SetTimeout(10.0f);
         sport_client_->Init();
         std::cout << "[MOTION_DAEMON] SDK2 initialized\n";
+        PrepareRealMoveMode();
+    }
+
+    void PrepareRealMoveMode() {
+        if (!sport_client_) {
+            throw std::runtime_error("SportClient is not initialized");
+        }
+        std::cout << "[MOTION_DAEMON][REAL] SwitchJoystick(false)\n";
+        std::cout << "[MOTION_DAEMON][REAL] SwitchJoystick(false) ret="
+                  << sport_client_->SwitchJoystick(false) << "\n";
+        joystick_disabled_ = true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+        std::cout << "[MOTION_DAEMON][REAL] StandUp ret="
+                  << sport_client_->StandUp() << "\n";
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+
+        std::cout << "[MOTION_DAEMON][REAL] BalanceStand ret="
+                  << sport_client_->BalanceStand() << "\n";
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+
+        std::cout << "[MOTION_DAEMON][REAL] SpeedLevel(1) ret="
+                  << sport_client_->SpeedLevel(1) << "\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+        std::cout << "[MOTION_DAEMON][REAL] ClassicWalk(true) ret="
+                  << sport_client_->ClassicWalk(true) << "\n";
+        classic_walk_enabled_ = true;
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
     void CreateServerSocket() {
@@ -459,9 +488,35 @@ private:
         }
     }
 
+    void RestoreRealMoveMode() {
+        if (!options_.enable_real_move || !sport_client_) {
+            return;
+        }
+        try {
+            if (classic_walk_enabled_) {
+                std::cout << "[MOTION_DAEMON][REAL] ClassicWalk(false)\n";
+                std::cout << "[MOTION_DAEMON][REAL] ClassicWalk(false) ret="
+                          << sport_client_->ClassicWalk(false) << "\n";
+                classic_walk_enabled_ = false;
+            }
+            if (joystick_disabled_) {
+                std::cout << "[MOTION_DAEMON][REAL] SwitchJoystick(true)\n";
+                std::cout << "[MOTION_DAEMON][REAL] SwitchJoystick(true) ret="
+                          << sport_client_->SwitchJoystick(true) << "\n";
+                joystick_disabled_ = false;
+            }
+        } catch (const std::exception &exc) {
+            std::cerr << "[MOTION_DAEMON][ERROR] real mode restore failed: "
+                      << exc.what() << "\n";
+        } catch (...) {
+            std::cerr << "[MOTION_DAEMON][ERROR] real mode restore failed\n";
+        }
+    }
+
     void Shutdown() {
         std::cout << "[MOTION_DAEMON] shutting down, StopMove\n";
         SafeStopMove();
+        RestoreRealMoveMode();
         MarkStopped();
         if (watchdog_thread_.joinable()) {
             watchdog_thread_.join();
@@ -481,6 +536,8 @@ private:
     int last_seq_ = 0;
     bool moving_ = false;
     bool watchdog_fired_ = false;
+    bool joystick_disabled_ = false;
+    bool classic_walk_enabled_ = false;
     std::chrono::steady_clock::time_point last_command_time_;
 };
 

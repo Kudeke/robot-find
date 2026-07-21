@@ -107,3 +107,7 @@ Daemon.
 
 The test disables joystick control only during the short acceptance window and
 restores it before exit, including cancellation and exception cleanup paths.
+
+After this direct SDK2 test passes, use `test_motion_daemon_real_acceptance.sh`
+to verify the same real Move can be routed through the GO2-local Unix Socket
+daemon before integrating WebSocket, Safety Gate, or Uni-NaVid.
