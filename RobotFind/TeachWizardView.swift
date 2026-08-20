@@ -3,6 +3,7 @@
 
 import SwiftUI
 import ARKit
+import AVFoundation
 import SceneKit
 import UIKit
 
@@ -15,7 +16,7 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
     @Published private(set) var guidanceText = "Center the item to begin guided capture."
 
     private let sessionQueue = DispatchQueue(label: "com.fmt.teach", qos: .userInitiated)
-    private let targetDistance: Float = 0.45
+    private let targetDistanceMeters: Float = 0.45
     private let minimumDistance: Float = 0.25
     private let maximumDistance: Float = 0.85
     private var teachingAnchor: ARAnchor?
@@ -24,6 +25,9 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
     private var captureCompletion: ((Result<FinalizedTeachVideo, Error>) -> Void)?
     private var videoRecorder: TeachVideoRecorder?
     private var captureWorkItem: DispatchWorkItem?
+    private var lastSpokenGuidance = ""
+    private var lastHapticGuidance = ""
+    private let speechSynthesizer = AVSpeechSynthesizer()
 
     func setup() {
         guard ARWorldTrackingConfiguration.isSupported else { return }
@@ -145,7 +149,7 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
         let cameraPosition = frame.camera.transform.translation
         let anchorPosition = anchor.transform.translation
         let distance = simd_distance(cameraPosition, anchorPosition)
-        let progress = max(0, 1 - abs(distance - targetDistance) / (maximumDistance - minimumDistance))
+        let progress = max(0, 1 - abs(distance - targetDistanceMeters) / (maximumDistance - minimumDistance))
         let clampedProgress = min(1, progress)
         let text: String
         if distance < minimumDistance {
@@ -155,7 +159,14 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
         } else if clampedProgress < 0.7 {
             text = "Hold the phone about one foot away."
         } else if captureStartedAt != nil {
-            text = "Good distance. Move slowly around the item."
+            let horizontalOffset = cameraPosition.x - anchorPosition.x
+            if horizontalOffset < -0.08 {
+                text = "Good distance. Move slowly to the right."
+            } else if horizontalOffset > 0.08 {
+                text = "Good distance. Move slowly to the left."
+            } else {
+                text = "Good distance. Move slowly around the item."
+            }
         } else {
             text = "Good distance. Tap capture when ready."
         }
@@ -164,7 +175,24 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
             self?.distanceProgress = Double(clampedProgress)
             self?.guidanceText = text
         }
+        speakAndHapticIfNeeded(text)
         return clampedProgress >= 0.7
+    }
+
+    private func speakAndHapticIfNeeded(_ text: String) {
+        guard text != lastSpokenGuidance else { return }
+        lastSpokenGuidance = text
+        DispatchQueue.main.async {
+            let utterance = AVSpeechUtterance(string: text)
+            utterance.rate = 0.48
+            self.speechSynthesizer.stopSpeaking(at: .word)
+            self.speechSynthesizer.speak(utterance)
+            UIAccessibility.post(notification: .announcement, argument: text)
+            if text != self.lastHapticGuidance {
+                self.lastHapticGuidance = text
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            }
+        }
     }
 }
 
