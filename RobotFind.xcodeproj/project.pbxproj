@@ -22,6 +22,7 @@
 		CCB8994C731B1D207F42DAC0 /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ACE0C888DA357B6AE4C1DB5 /* ItemDetailView.swift */; };
 		D3CF664B80411DA4FA813870 /* TeachWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B47128061A1FA952766C896 /* TeachWizardView.swift */; };
 		E1A6C7D8F90123456789ABCD /* TeachCaptureStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A6C7D8F90123456789ABCD /* TeachCaptureStore.swift */; };
+		E2B7D8E9F0123456789ABCDE /* TeachVideoRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2B7D8E9F0123456789ABCDE /* TeachVideoRecorder.swift */; };
 		D9C81214EC46FF8338F32366 /* ErrorStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB589C93AE37E7E0B0DD13E /* ErrorStateView.swift */; };
 		F29383D68C7D44C11ED552BA /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF7395A567E28E4CCE798881 /* LibraryView.swift */; };
 /* End PBXBuildFile section */
@@ -44,6 +45,7 @@
 		D8983E76401A8790EBFC314A /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS14.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		DF7395A567E28E4CCE798881 /* LibraryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		F1A6C7D8F90123456789ABCD /* TeachCaptureStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TeachCaptureStore.swift; sourceTree = "<group>"; };
+		F2B7D8E9F0123456789ABCDE /* TeachVideoRecorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TeachVideoRecorder.swift; sourceTree = "<group>"; };
 		FD3898F1EAE5D1C418270F91 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -106,6 +108,7 @@
 				DF7395A567E28E4CCE798881 /* LibraryView.swift */,
 				0B47128061A1FA952766C896 /* TeachWizardView.swift */,
 				F1A6C7D8F90123456789ABCD /* TeachCaptureStore.swift */,
+				F2B7D8E9F0123456789ABCDE /* TeachVideoRecorder.swift */,
 				32278816D6809612A367081A /* ItemPickerView.swift */,
 				AB72ED5E71516E941776A90B /* ScanningView.swift */,
 				068AAEA5A43D32F255276AAD /* FoundView.swift */,
@@ -194,6 +197,7 @@
 				F29383D68C7D44C11ED552BA /* LibraryView.swift in Sources */,
 				D3CF664B80411DA4FA813870 /* TeachWizardView.swift in Sources */,
 				E1A6C7D8F90123456789ABCD /* TeachCaptureStore.swift in Sources */,
+				E2B7D8E9F0123456789ABCDE /* TeachVideoRecorder.swift in Sources */,
 				4C093FBB12CD3E0CBB67D9AA /* ItemPickerView.swift in Sources */,
 				886B5D8263FB54ECDBA560ED /* ScanningView.swift in Sources */,
 				4F81C7DB36718C69A26EB1AA /* FoundView.swift in Sources */,

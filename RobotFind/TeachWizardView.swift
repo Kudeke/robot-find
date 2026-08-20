@@ -20,10 +20,9 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
     private let maximumDistance: Float = 0.85
     private var teachingAnchor: ARAnchor?
     private var captureStartedAt: Date?
-    private var sampleTargets: [Double] = []
-    private var sampledTargets = Set<Double>()
-    private var sampleHandler: ((CVPixelBuffer) throws -> Void)?
-    private var captureCompletion: ((Result<Int, Error>) -> Void)?
+    private var captureDuration: TimeInterval = 0
+    private var captureCompletion: ((Result<FinalizedTeachVideo, Error>) -> Void)?
+    private var videoRecorder: TeachVideoRecorder?
     private var captureWorkItem: DispatchWorkItem?
 
     func setup() {
@@ -40,24 +39,37 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
 
     // Call from main thread; completion is called on the main thread.
     func capture(duration: TimeInterval,
-                 sampleHandler: @escaping (CVPixelBuffer) throws -> Void,
-                 completion: @escaping (Result<Int, Error>) -> Void) {
+                 itemID: String,
+                 clipIndex: Int,
+                 completion: @escaping (Result<FinalizedTeachVideo, Error>) -> Void) {
         sessionQueue.async { [weak self] in
             guard let self else { return }
             self.captureWorkItem?.cancel()
             self.captureStartedAt = Date()
-            self.sampleTargets = [0.15, 0.4, 0.65, 0.9]
-            self.sampledTargets.removeAll()
-            self.sampleHandler = sampleHandler
+            self.captureDuration = duration
             self.captureCompletion = completion
+            do {
+                let recorder = TeachVideoRecorder()
+                try recorder.startRecording(itemID: itemID, clipIndex: clipIndex)
+                self.videoRecorder = recorder
+            } catch {
+                self.captureStartedAt = nil
+                self.captureCompletion = nil
+                DispatchQueue.main.async { completion(.failure(error)) }
+                return
+            }
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self, self.captureStartedAt != nil else { return }
-                let count = self.sampledTargets.count
                 self.captureStartedAt = nil
-                self.sampleHandler = nil
-                let completion = self.captureCompletion
-                self.captureCompletion = nil
-                DispatchQueue.main.async { completion?(.success(count)) }
+                self.videoRecorder?.finish { [weak self] result in
+                    guard let self else { return }
+                    self.sessionQueue.async {
+                        self.videoRecorder = nil
+                        let completion = self.captureCompletion
+                        self.captureCompletion = nil
+                        DispatchQueue.main.async { completion?(result) }
+                    }
+                }
             }
             self.captureWorkItem = workItem
             self.sessionQueue.asyncAfter(deadline: .now() + duration, execute: workItem)
@@ -68,20 +80,20 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
         if teachingAnchor == nil {
             placeTeachingAnchor(from: frame)
         }
-        let distanceIsGood = updateDistanceGuidance(from: frame)
+        _ = updateDistanceGuidance(from: frame)
 
         guard let startedAt = captureStartedAt,
-              let sampleHandler,
-              let target = sampleTargets.first(where: { !sampledTargets.contains($0) }),
-              distanceIsGood,
-              Date().timeIntervalSince(startedAt) / 1.8 >= target else { return }
+              let videoRecorder else { return }
         do {
-            try sampleHandler(frame.capturedImage)
-            sampledTargets.insert(target)
+            try videoRecorder.append(frame: frame)
+            if Date().timeIntervalSince(startedAt) >= captureDuration {
+                captureWorkItem?.perform()
+            }
         } catch {
             captureWorkItem?.cancel()
             captureStartedAt = nil
-            self.sampleHandler = nil
+            videoRecorder.cancel()
+            self.videoRecorder = nil
             let completion = captureCompletion
             captureCompletion = nil
             DispatchQueue.main.async { completion?(.failure(error)) }
@@ -96,7 +108,8 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
             self?.teachingAnchor = nil
             self?.captureWorkItem?.cancel()
             self?.captureStartedAt = nil
-            self?.sampleHandler = nil
+            self?.videoRecorder?.cancel()
+            self?.videoRecorder = nil
             self?.captureCompletion = nil
             DispatchQueue.main.async {
                 self?.distanceProgress = 0
@@ -219,7 +232,7 @@ struct TeachWizardView: View {
                 micAllowed = AVAudioSession.sharedInstance().recordPermission == .granted
             }
             .onChange(of: step) { _, newStep in
-                let stepNames = ["", "Name your item", "Tips for capture", "Capture guided views", "Preparing item", "Done"]
+                let stepNames = ["", "Name your item", "Tips for capture", "Capture guided views", "Saving recordings", "Done"]
                 let name = stepNames.indices.contains(newStep) ? stepNames[newStep] : "Step \(newStep)"
                 UIAccessibility.post(notification: .screenChanged, argument: "Step \(newStep) of \(totalSteps). \(name).")
                 if newStep == 3 { teachCamera.setup() }
@@ -554,7 +567,7 @@ struct TeachWizardView: View {
                     .foregroundStyle(Color.white.opacity(0.7))
                     .accessibilityAddTraits(.updatesFrequently)
 
-                // Prepare / Next
+                // Finish / Next
                 Button {
                     if allDone {
                         trainProgress = 0
@@ -562,7 +575,7 @@ struct TeachWizardView: View {
                         startPreparingItem()
                     }
                 } label: {
-                    Text(allDone ? "Prepare item" : "Next")
+                    Text(allDone ? "Recording complete" : "Next")
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(allDone ? FMTTheme.onAccent : FMTTheme.onAccent.opacity(0.45))
                         .frame(maxWidth: .infinity, minHeight: 60)
@@ -570,9 +583,9 @@ struct TeachWizardView: View {
                         .clipShape(RoundedRectangle(cornerRadius: FMTTheme.Radius.row))
                 }
                 .disabled(!allDone)
-                .accessibilityLabel(allDone ? "Prepare item" : "Next")
+                .accessibilityLabel(allDone ? "Recording complete" : "Next")
                 .accessibilityHint(allDone
-                    ? "Prepares this item, step 4 of 5"
+                    ? "Verifies the four recordings, step 4 of 5"
                     : "Continues when all 4 guided views are captured")
             }
             .padding(.horizontal, 20)
@@ -735,19 +748,19 @@ struct TeachWizardView: View {
                                 .foregroundStyle(FMTTheme.text)
                         }
                     }
-                    .accessibilityLabel("Preparing item, \(Int(trainProgress)) percent complete")
+                    .accessibilityLabel("Saving recordings, \(Int(trainProgress)) percent complete")
                     .accessibilityAddTraits(.updatesFrequently)
 
                     VStack(spacing: 10) {
-                        Text(done ? "Capture complete" : "Preparing item\u{2026}")
+                        Text(done ? "Item captured" : "Saving recordings\u{2026}")
                             .font(.system(size: 28, weight: .bold))
                             .tracking(-0.4)
                             .foregroundStyle(FMTTheme.text)
                             .accessibilityAddTraits(.isHeader)
 
                         Text(done
-                             ? "Your \(itemName.isEmpty ? "item" : itemName) is saved for the next search flow."
-                             : "Checking the guided capture for your \(itemName.isEmpty ? "item" : itemName). This will take just a few seconds.")
+                             ? "Your recordings for \(itemName.isEmpty ? "item" : itemName) are saved for the next search flow."
+                             : "Checking the four recordings for your \(itemName.isEmpty ? "item" : itemName). This will take just a few seconds.")
                             .font(.system(size: 19))
                             .foregroundStyle(FMTTheme.textSecondary)
                             .multilineTextAlignment(.center)
@@ -869,24 +882,21 @@ struct TeachWizardView: View {
     private func startRecording() {
         isRecording = true
         UIAccessibility.post(notification: .announcement, argument: "Guided capture started.")
-        teachCamera.capture(duration: 1.8, sampleHandler: { pixelBuffer in
-            try TeachCaptureStore.shared.appendJPEG(from: pixelBuffer, itemID: itemID)
-        }) { result in
+        teachCamera.capture(duration: 4.0, itemID: itemID, clipIndex: clipsRecorded + 1) { result in
             isRecording = false
             switch result {
-            case .success(let samples):
+            case .success(let video):
                 clipsRecorded = min(4, clipsRecorded + 1)
                 let remaining = 4 - clipsRecorded
-                print("[TeachCapture] capture \(clipsRecorded) completed, samples=\(samples)")
+                print("[TeachVideo] recording stopped clip=\(clipsRecorded) duration=\(video.duration) size=\(video.fileSize)")
                 let msg = remaining > 0
-                    ? "\(clipsRecorded) of 4 captured. \(remaining) remaining."
-                    : "All 4 guided views captured. Tap Prepare item."
+                    ? "\(clipsRecorded) of 4 recordings saved. \(remaining) remaining."
+                    : "All 4 recordings saved. Tap Recording complete."
                 UIAccessibility.post(notification: .announcement, argument: msg)
             case .failure(let error):
-                trainFailed = true
-                print("[TeachCapture] capture failed: \(error.localizedDescription)")
+                print("[TeachVideo] recording failed: \(error.localizedDescription)")
                 UIAccessibility.post(notification: .announcement,
-                                     argument: "The image could not be saved. Please try this view again.")
+                                     argument: "The video could not be saved. Please try this view again.")
             }
         }
     }
@@ -914,16 +924,16 @@ struct TeachWizardView: View {
         }
 
         do {
-            let imageCount = try TeachCaptureStore.shared.imageCount(itemID: itemID)
-            guard imageCount >= 8 else {
-                throw TeachCaptureError.insufficientImages(imageCount)
+            let clips = try TeachCaptureStore.shared.validateClips(itemID: itemID)
+            print("[TeachVideo] teaching complete clips=\(clips.count)")
+            for clip in clips {
+                print("[TeachVideo] finalized \(clip.url.lastPathComponent) duration=\(clip.duration) size=\(clip.fileSize)")
             }
-            print("[TeachCapture] teaching completed, totalImages=\(imageCount)")
         } catch {
             trainFailed = true
             print("[TeachCapture] teaching failed: \(error.localizedDescription)")
             UIAccessibility.post(notification: .announcement,
-                                 argument: "Too few usable images were captured. Tap Retry guided views to try again.")
+                                 argument: "One or more recordings are not valid. Tap Retry guided views to try again.")
             return
         }
 
@@ -934,7 +944,7 @@ struct TeachWizardView: View {
                 let pct = Int(trainProgress)
                 if [25, 50, 75, 100].contains(pct) {
                     UIAccessibility.post(notification: .announcement,
-                                         argument: "Preparing item \(pct) percent complete.")
+                                         argument: "Saving recordings, \(pct) percent complete.")
                 }
                 tick()
             }
