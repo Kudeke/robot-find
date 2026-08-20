@@ -212,7 +212,7 @@ struct OnboardingView: View {
     private let slides: [Slide] = [
         Slide(
             headline: "Teach me your things.",
-            body: "Record 4 short videos of an object \u{2014} your keys, mug, anything. I\u{2019}ll learn what it looks like.",
+            body: "Capture 4 guided views of an object \u{2014} your keys, mug, anything. RobotFind saves the image set on this device.",
             glyph: .teach
         ),
         Slide(
@@ -222,7 +222,7 @@ struct OnboardingView: View {
         ),
         Slide(
             headline: "Everything stays on your iPhone.",
-            body: "Your videos and the AI model never leave your device.",
+            body: "Your captured images stay on this device during this setup phase.",
             glyph: .lock
         ),
     ]

@@ -1,53 +1,87 @@
 // TeachWizardView.swift
-// Teach wizard — 5 steps. Spec: README §7.6
+// Teach wizard — 5 steps with four guided image-capture views.
 
 import SwiftUI
-import AVFoundation
+import ARKit
+import SceneKit
+import UIKit
 
 // MARK: - Teach camera model (camera preview + guided capture)
 
-final class TeachCameraModel: NSObject, ObservableObject {
-    let session = AVCaptureSession()
+final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
+    let session = ARSession()
     @Published var hasCameraInput = false
 
     private let sessionQueue = DispatchQueue(label: "com.fmt.teach", qos: .userInitiated)
-    private var capturing = false
+    private var captureStartedAt: Date?
+    private var sampleTargets: [Double] = []
+    private var sampledTargets = Set<Double>()
+    private var sampleHandler: ((CVPixelBuffer) throws -> Void)?
+    private var captureCompletion: ((Result<Int, Error>) -> Void)?
     private var captureWorkItem: DispatchWorkItem?
 
     func setup() {
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-              let input = try? AVCaptureDeviceInput(device: device) else { return }
-        session.beginConfiguration()
-        session.sessionPreset = .medium
-        if session.canAddInput(input) { session.addInput(input) }
-        session.commitConfiguration()
+        guard ARWorldTrackingConfiguration.isSupported else { return }
+        session.delegate = self
+        session.delegateQueue = sessionQueue
+        let configuration = ARWorldTrackingConfiguration()
         sessionQueue.async { [weak self] in
-            self?.session.startRunning()
+            self?.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
             DispatchQueue.main.async { self?.hasCameraInput = true }
         }
     }
 
-    // Call from main thread; completion called on main thread
-    func capture(duration: TimeInterval, completion: @escaping () -> Void) {
+    // Call from main thread; completion is called on the main thread.
+    func capture(duration: TimeInterval,
+                 sampleHandler: @escaping (CVPixelBuffer) throws -> Void,
+                 completion: @escaping (Result<Int, Error>) -> Void) {
         sessionQueue.async { [weak self] in
             guard let self else { return }
             self.captureWorkItem?.cancel()
-            self.capturing = true
+            self.captureStartedAt = Date()
+            self.sampleTargets = [0.15, 0.4, 0.65, 0.9]
+            self.sampledTargets.removeAll()
+            self.sampleHandler = sampleHandler
+            self.captureCompletion = completion
             let workItem = DispatchWorkItem { [weak self] in
-                guard let self, self.capturing else { return }
-                self.capturing = false
-                DispatchQueue.main.async { completion() }
+                guard let self, self.captureStartedAt != nil else { return }
+                let count = self.sampledTargets.count
+                self.captureStartedAt = nil
+                self.sampleHandler = nil
+                let completion = self.captureCompletion
+                self.captureCompletion = nil
+                DispatchQueue.main.async { completion?(.success(count)) }
             }
             self.captureWorkItem = workItem
             self.sessionQueue.asyncAfter(deadline: .now() + duration, execute: workItem)
         }
     }
 
+    func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        guard let startedAt = captureStartedAt,
+              let sampleHandler,
+              let target = sampleTargets.first(where: { !sampledTargets.contains($0) }),
+              Date().timeIntervalSince(startedAt) / 1.8 >= target else { return }
+        do {
+            try sampleHandler(frame.capturedImage)
+            sampledTargets.insert(target)
+        } catch {
+            captureWorkItem?.cancel()
+            captureStartedAt = nil
+            self.sampleHandler = nil
+            let completion = captureCompletion
+            captureCompletion = nil
+            DispatchQueue.main.async { completion?(.failure(error)) }
+        }
+    }
+
     func stop() {
         sessionQueue.async { [weak self] in
             self?.captureWorkItem?.cancel()
-            self?.capturing = false
-            self?.session.stopRunning()
+            self?.captureStartedAt = nil
+            self?.sampleHandler = nil
+            self?.captureCompletion = nil
+            self?.session.pause()
         }
     }
 }
@@ -106,7 +140,7 @@ struct TeachWizardView: View {
                 micAllowed = AVAudioSession.sharedInstance().recordPermission == .granted
             }
             .onChange(of: step) { _, newStep in
-                let stepNames = ["", "Name your item", "Tips for recording", "Record videos", "Preparing item", "Done"]
+                let stepNames = ["", "Name your item", "Tips for capture", "Capture guided views", "Preparing item", "Done"]
                 let name = stepNames.indices.contains(newStep) ? stepNames[newStep] : "Step \(newStep)"
                 UIAccessibility.post(notification: .screenChanged, argument: "Step \(newStep) of \(totalSteps). \(name).")
                 if newStep == 3 { teachCamera.setup() }
@@ -299,8 +333,8 @@ struct TeachWizardView: View {
     private let tips = [
         "Use a contrasting background — a plain table works well.",
         "Hold the phone about one foot away.",
-        "You\u{2019}ll record 4 short videos from different angles.",
-        "Each video is about 5 seconds.",
+        "You\u{2019}ll capture 4 short guided views from different angles.",
+        "Each guided view takes about 2 seconds.",
     ]
 
     private var step2: some View {
@@ -362,13 +396,15 @@ struct TeachWizardView: View {
             // Bottom CTAs
             VStack(spacing: 10) {
                 bottomButton(label: "I\u{2019}m ready",
-                             hint: "Starts video recording, step 3 of 5",
+                             hint: "Starts guided image capture, step 3 of 5",
                              enabled: true) {
                     clipsRecorded = 0
+                    beginCaptureSession()
                     step = 3
                 }
                 Button {
                     clipsRecorded = 0
+                    beginCaptureSession()
                     step = 3
                 } label: {
                     Text("Get help framing")
@@ -385,7 +421,7 @@ struct TeachWizardView: View {
         }
     }
 
-    // MARK: ─ Step 3: Record 4 clips ──────────────────────────────────────
+    // MARK: ─ Step 3: Capture 4 guided views ──────────────────────────────
 
     private var step3: some View {
         let currentAngle = angles[min(clipsRecorded, 3)]
@@ -394,11 +430,11 @@ struct TeachWizardView: View {
         return VStack(spacing: 0) {
             // Angle label
             VStack(spacing: 6) {
-                Text("Video \(min(clipsRecorded + 1, 4)) of 4")
+            Text("View \(min(clipsRecorded + 1, 4)) of 4")
                     .font(.system(size: 14, weight: .semibold))
                     .kerning(0.5)
                     .foregroundStyle(Color.white.opacity(0.7))
-                Text(allDone ? "All 4 videos recorded" : currentAngle)
+                Text(allDone ? "All 4 guided views captured" : currentAngle)
                     .font(.system(size: 28, weight: .bold))
                     .tracking(-0.4)
                     .foregroundStyle(Color.white)
@@ -424,9 +460,9 @@ struct TeachWizardView: View {
             .padding(.top, 16)
             .padding(.bottom, 8)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(clipsRecorded) of 4 videos recorded")
+            .accessibilityLabel("\(clipsRecorded) of 4 guided views captured")
 
-            // Record button + status + Next
+            // Capture button + status + Next
             VStack(spacing: 14) {
                 RecordButton(isRecording: isRecording, isDone: allDone, clipIndex: clipsRecorded) {
                     guard !isRecording && !allDone else { return }
@@ -434,7 +470,7 @@ struct TeachWizardView: View {
                 }
 
                 Text(allDone ? "Tap Prepare item to finish capture"
-                     : (isRecording ? "Recording\u{2026}" : "Tap to record"))
+                     : (isRecording ? "Capturing\u{2026}" : "Tap to capture"))
                     .font(.system(size: 16))
                     .foregroundStyle(Color.white.opacity(0.7))
                     .accessibilityAddTraits(.updatesFrequently)
@@ -458,7 +494,7 @@ struct TeachWizardView: View {
                 .accessibilityLabel(allDone ? "Prepare item" : "Next")
                 .accessibilityHint(allDone
                     ? "Prepares this item, step 4 of 5"
-                    : "Continues when all 4 clips are recorded")
+                    : "Continues when all 4 guided views are captured")
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 28)
@@ -565,7 +601,7 @@ struct TeachWizardView: View {
                             .multilineTextAlignment(.center)
                             .accessibilityAddTraits(.isHeader)
 
-                        Text("I wasn\u{2019}t able to complete the capture for your \(itemName.isEmpty ? "item" : itemName) this time. Let\u{2019}s try recording the videos again.")
+                        Text("I wasn\u{2019}t able to complete the capture for your \(itemName.isEmpty ? "item" : itemName) this time. Let\u{2019}s try the guided views again.")
                             .font(.system(size: 17))
                             .foregroundStyle(FMTTheme.textSecondary)
                             .multilineTextAlignment(.center)
@@ -577,8 +613,8 @@ struct TeachWizardView: View {
                 Spacer()
 
                 bottomButton(
-                    label: "Re-record videos",
-                    hint: "Goes back to recording step",
+                    label: "Retry guided views",
+                    hint: "Goes back to the guided capture step",
                     systemImage: "arrow.counterclockwise",
                     enabled: true
                 ) {
@@ -747,15 +783,38 @@ struct TeachWizardView: View {
 
     private func startRecording() {
         isRecording = true
-        UIAccessibility.post(notification: .announcement, argument: "Recording started.")
-        teachCamera.capture(duration: 1.8) {
+        UIAccessibility.post(notification: .announcement, argument: "Guided capture started.")
+        teachCamera.capture(duration: 1.8, sampleHandler: { pixelBuffer in
+            try TeachCaptureStore.shared.appendJPEG(from: pixelBuffer, itemID: itemID)
+        }) { result in
             isRecording = false
-            clipsRecorded = min(4, clipsRecorded + 1)
-            let remaining = 4 - clipsRecorded
-            let msg = remaining > 0
-                ? "\(clipsRecorded) of 4 recorded. \(remaining) remaining."
-                : "All 4 videos recorded. Tap Prepare item."
-            UIAccessibility.post(notification: .announcement, argument: msg)
+            switch result {
+            case .success(let samples):
+                clipsRecorded = min(4, clipsRecorded + 1)
+                let remaining = 4 - clipsRecorded
+                print("[TeachCapture] capture \(clipsRecorded) completed, samples=\(samples)")
+                let msg = remaining > 0
+                    ? "\(clipsRecorded) of 4 captured. \(remaining) remaining."
+                    : "All 4 guided views captured. Tap Prepare item."
+                UIAccessibility.post(notification: .announcement, argument: msg)
+            case .failure(let error):
+                trainFailed = true
+                print("[TeachCapture] capture failed: \(error.localizedDescription)")
+                UIAccessibility.post(notification: .announcement,
+                                     argument: "The image could not be saved. Please try this view again.")
+            }
+        }
+    }
+
+    private func beginCaptureSession() {
+        do {
+            try TeachCaptureStore.shared.startSession(itemID: itemID)
+            trainFailed = false
+        } catch {
+            trainFailed = true
+            print("[TeachCapture] session failed: \(error.localizedDescription)")
+            UIAccessibility.post(notification: .announcement,
+                                 argument: "The capture folder could not be prepared. Please try again.")
         }
     }
 
@@ -765,11 +824,24 @@ struct TeachWizardView: View {
         guard clipsRecorded >= 4 else {
             trainFailed = true
             UIAccessibility.post(notification: .announcement,
-                                 argument: "Capture incomplete. Tap Re-record videos to try again.")
+                                 argument: "Capture incomplete. Tap Retry guided views to try again.")
             return
         }
 
-        // Temporary Phase 0 completion: guided captures are validated but not persisted yet.
+        do {
+            let imageCount = try TeachCaptureStore.shared.imageCount(itemID: itemID)
+            guard imageCount >= 8 else {
+                throw TeachCaptureError.insufficientImages(imageCount)
+            }
+            print("[TeachCapture] teaching completed, totalImages=\(imageCount)")
+        } catch {
+            trainFailed = true
+            print("[TeachCapture] teaching failed: \(error.localizedDescription)")
+            UIAccessibility.post(notification: .announcement,
+                                 argument: "Too few usable images were captured. Tap Retry guided views to try again.")
+            return
+        }
+
         func tick() {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
                 guard trainProgress < 100 else { return }
@@ -789,19 +861,21 @@ struct TeachWizardView: View {
 // MARK: - Camera preview (UIViewRepresentable)
 
 private struct CameraPreviewView: UIViewRepresentable {
-    let session: AVCaptureSession
+    let session: ARSession
 
     func makeUIView(context: Context) -> PreviewUIView { PreviewUIView(session: session) }
     func updateUIView(_ uiView: PreviewUIView, context: Context) {}
 
     final class PreviewUIView: UIView {
-        private let previewLayer: AVCaptureVideoPreviewLayer
+        private let sceneView: ARSCNView
 
-        init(session: AVCaptureSession) {
-            previewLayer = AVCaptureVideoPreviewLayer(session: session)
-            previewLayer.videoGravity = .resizeAspectFill
+        init(session: ARSession) {
+            sceneView = ARSCNView(frame: .zero, options: nil)
             super.init(frame: .zero)
-            layer.addSublayer(previewLayer)
+            sceneView.session = session
+            sceneView.scene = SCNScene()
+            sceneView.automaticallyUpdatesLighting = false
+            addSubview(sceneView)
         }
 
         required init?(coder: NSCoder) { fatalError() }
@@ -810,13 +884,13 @@ private struct CameraPreviewView: UIViewRepresentable {
             super.layoutSubviews()
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            previewLayer.frame = bounds
+            sceneView.frame = bounds
             CATransaction.commit()
         }
     }
 }
 
-// MARK: - Record button
+// MARK: - Capture button
 
 private struct RecordButton: View {
     let isRecording: Bool
@@ -846,8 +920,8 @@ private struct RecordButton: View {
         .buttonStyle(.plain)
         .opacity(isDone ? 0.4 : 1)
         .disabled(isDone || isRecording)
-        .accessibilityLabel(isDone ? "All videos recorded" : "Record video \(clipIndex + 1) of 4")
-        .accessibilityHint(isDone ? "" : "Tap to record")
+        .accessibilityLabel(isDone ? "All guided views captured" : "Capture guided view \(clipIndex + 1) of 4")
+        .accessibilityHint(isDone ? "" : "Tap to capture four representative images")
     }
 }
 

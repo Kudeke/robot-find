@@ -91,7 +91,7 @@ struct HomeView: View {
 
                         FMTBigButton(
                             title: "Teach a new item",
-                            subtitle: "Record 4 short videos",
+                            subtitle: "Capture 4 guided views",
                             systemImage: "plus",
                             style: .secondary
                         ) { showTeach = true }
