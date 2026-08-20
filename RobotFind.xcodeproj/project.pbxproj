@@ -1,0 +1,403 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		137387E565CC5FBCF9A39AF5 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D8983E76401A8790EBFC314A /* Foundation.framework */; };
+		2726E001521AD4F1CF10E738 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CE5D097B52B77EBC184DD1C /* ContentView.swift */; };
+		4C093FBB12CD3E0CBB67D9AA /* ItemPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32278816D6809612A367081A /* ItemPickerView.swift */; };
+		4F81C7DB36718C69A26EB1AA /* FoundView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 068AAEA5A43D32F255276AAD /* FoundView.swift */; };
+		5793C6C8AC14A6DADB3C4851 /* FMTTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF892EDCFA9F71A90CA584E5 /* FMTTheme.swift */; };
+		6A02C117E3422B21AC94F5A9 /* RobotFindApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5FE3D59985B0B67FCAF86CC /* RobotFindApp.swift */; };
+		816A2FC0C38479892458F56B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE4EA6D78DBF366F359DD93 /* SettingsView.swift */; };
+		886B5D8263FB54ECDBA560ED /* ScanningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB72ED5E71516E941776A90B /* ScanningView.swift */; };
+		94FAFCE7B87D5B40FA44DE16 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FD3898F1EAE5D1C418270F91 /* Assets.xcassets */; };
+		A47C3C442F088F6DBC2F2A41 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17DC9B0BCC9EC84717205C1B /* HomeView.swift */; };
+		B00A521EA05306046AA2976F /* FMTComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D47EEBCAA337F4E9436BC6AC /* FMTComponents.swift */; };
+		C2D376AD6B2AB7A66E555ABE /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 531907D7238C938848745B5F /* OnboardingView.swift */; };
+		CCB8994C731B1D207F42DAC0 /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ACE0C888DA357B6AE4C1DB5 /* ItemDetailView.swift */; };
+		D3CF664B80411DA4FA813870 /* TeachWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B47128061A1FA952766C896 /* TeachWizardView.swift */; };
+		D9C81214EC46FF8338F32366 /* ErrorStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB589C93AE37E7E0B0DD13E /* ErrorStateView.swift */; };
+		F29383D68C7D44C11ED552BA /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF7395A567E28E4CCE798881 /* LibraryView.swift */; };
+		E1F2A3B4C5D6E7F8A9B0C1D2 /* FeaturePrintStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2A3B4C5D6E7F8A9B0C1D2E3 /* FeaturePrintStore.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		068AAEA5A43D32F255276AAD /* FoundView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FoundView.swift; sourceTree = "<group>"; };
+		0B47128061A1FA952766C896 /* TeachWizardView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TeachWizardView.swift; sourceTree = "<group>"; };
+		17DC9B0BCC9EC84717205C1B /* HomeView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		1DB589C93AE37E7E0B0DD13E /* ErrorStateView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ErrorStateView.swift; sourceTree = "<group>"; };
+		32278816D6809612A367081A /* ItemPickerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ItemPickerView.swift; sourceTree = "<group>"; };
+		4DE4EA6D78DBF366F359DD93 /* SettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		531907D7238C938848745B5F /* OnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		6ACE0C888DA357B6AE4C1DB5 /* ItemDetailView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ItemDetailView.swift; sourceTree = "<group>"; };
+		9CE5D097B52B77EBC184DD1C /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A5FE3D59985B0B67FCAF86CC /* RobotFindApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RobotFindApp.swift; sourceTree = "<group>"; };
+		AB72ED5E71516E941776A90B /* ScanningView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScanningView.swift; sourceTree = "<group>"; };
+		BA8440A1E7F5A25E7AB41133 /* RobotFind.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RobotFind.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CF892EDCFA9F71A90CA584E5 /* FMTTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FMTTheme.swift; sourceTree = "<group>"; };
+		D47EEBCAA337F4E9436BC6AC /* FMTComponents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FMTComponents.swift; sourceTree = "<group>"; };
+		D8983E76401A8790EBFC314A /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS14.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		DF7395A567E28E4CCE798881 /* LibraryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
+		FD3898F1EAE5D1C418270F91 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F2A3B4C5D6E7F8A9B0C1D2E3 /* FeaturePrintStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FeaturePrintStore.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		FC4065DF6BFF61868BC09486 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				137387E565CC5FBCF9A39AF5 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		75A5BEB12745A583CDED8AF5 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				D8983E76401A8790EBFC314A /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		AFF21F9EDA3ECCD726B3E115 = {
+			isa = PBXGroup;
+			children = (
+				D0EC2CE674D409A61FFA45F5 /* Products */,
+				C07D67A7FDCB670378FBA600 /* Frameworks */,
+				D16F3DE103FD8B624FF4514E /* RobotFind */,
+			);
+			sourceTree = "<group>";
+		};
+		C07D67A7FDCB670378FBA600 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				75A5BEB12745A583CDED8AF5 /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		D0EC2CE674D409A61FFA45F5 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				BA8440A1E7F5A25E7AB41133 /* RobotFind.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		D16F3DE103FD8B624FF4514E /* RobotFind */ = {
+			isa = PBXGroup;
+			children = (
+				A5FE3D59985B0B67FCAF86CC /* RobotFindApp.swift */,
+				9CE5D097B52B77EBC184DD1C /* ContentView.swift */,
+				CF892EDCFA9F71A90CA584E5 /* FMTTheme.swift */,
+				D47EEBCAA337F4E9436BC6AC /* FMTComponents.swift */,
+				17DC9B0BCC9EC84717205C1B /* HomeView.swift */,
+				FD3898F1EAE5D1C418270F91 /* Assets.xcassets */,
+				6ACE0C888DA357B6AE4C1DB5 /* ItemDetailView.swift */,
+				4DE4EA6D78DBF366F359DD93 /* SettingsView.swift */,
+				DF7395A567E28E4CCE798881 /* LibraryView.swift */,
+				0B47128061A1FA952766C896 /* TeachWizardView.swift */,
+				32278816D6809612A367081A /* ItemPickerView.swift */,
+				AB72ED5E71516E941776A90B /* ScanningView.swift */,
+				068AAEA5A43D32F255276AAD /* FoundView.swift */,
+				531907D7238C938848745B5F /* OnboardingView.swift */,
+				1DB589C93AE37E7E0B0DD13E /* ErrorStateView.swift */,
+				F2A3B4C5D6E7F8A9B0C1D2E3 /* FeaturePrintStore.swift */,
+			);
+			path = RobotFind;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		5E29219CCE181B5637E29B59 /* RobotFind */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 211283561D50FE00702A0F1B /* Build configuration list for PBXNativeTarget "RobotFind" */;
+			buildPhases = (
+				35C9B0EF9F5264492A84334E /* Sources */,
+				FC4065DF6BFF61868BC09486 /* Frameworks */,
+				4DE8029C3F450AAE767C8E03 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RobotFind;
+			productName = RobotFind;
+			productReference = BA8440A1E7F5A25E7AB41133 /* RobotFind.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		11337EEFABA45A6517C3CFA3 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1300;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					5E29219CCE181B5637E29B59 = {
+						DevelopmentTeam = 3Q4NSCZHW4;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 5D7DDE6E221243DD6E6BA6CF /* Build configuration list for PBXProject "RobotFind" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = AFF21F9EDA3ECCD726B3E115;
+			productRefGroup = D0EC2CE674D409A61FFA45F5 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				5E29219CCE181B5637E29B59 /* RobotFind */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4DE8029C3F450AAE767C8E03 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				94FAFCE7B87D5B40FA44DE16 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		35C9B0EF9F5264492A84334E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6A02C117E3422B21AC94F5A9 /* RobotFindApp.swift in Sources */,
+				2726E001521AD4F1CF10E738 /* ContentView.swift in Sources */,
+				5793C6C8AC14A6DADB3C4851 /* FMTTheme.swift in Sources */,
+				B00A521EA05306046AA2976F /* FMTComponents.swift in Sources */,
+				A47C3C442F088F6DBC2F2A41 /* HomeView.swift in Sources */,
+				CCB8994C731B1D207F42DAC0 /* ItemDetailView.swift in Sources */,
+				816A2FC0C38479892458F56B /* SettingsView.swift in Sources */,
+				F29383D68C7D44C11ED552BA /* LibraryView.swift in Sources */,
+				D3CF664B80411DA4FA813870 /* TeachWizardView.swift in Sources */,
+				4C093FBB12CD3E0CBB67D9AA /* ItemPickerView.swift in Sources */,
+				886B5D8263FB54ECDBA560ED /* ScanningView.swift in Sources */,
+				4F81C7DB36718C69A26EB1AA /* FoundView.swift in Sources */,
+				C2D376AD6B2AB7A66E555ABE /* OnboardingView.swift in Sources */,
+				D9C81214EC46FF8338F32366 /* ErrorStateView.swift in Sources */,
+				E1F2A3B4C5D6E7F8A9B0C1D2 /* FeaturePrintStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		18AF39BE5C0C12C11870E923 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3Q4NSCZHW4;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = RobotFind;
+				INFOPLIST_KEY_CFBundleName = RobotFind;
+				INFOPLIST_KEY_NSCameraUsageDescription = "RobotFind uses the camera to recognise your objects and guide you to them.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "The microphone lets you dictate item names during teaching.";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fmtapp.RobotFind;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		63FFAF3B48AB1F09300A6CC5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		CC6807CEA990D533D2C3A1BE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3Q4NSCZHW4;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = RobotFind;
+				INFOPLIST_KEY_CFBundleName = RobotFind;
+				INFOPLIST_KEY_NSCameraUsageDescription = "RobotFind uses the camera to recognise your objects and guide you to them.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "The microphone lets you dictate item names during teaching.";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fmtapp.RobotFind;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		EE3943C6F71C6A04EAC4D429 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		211283561D50FE00702A0F1B /* Build configuration list for PBXNativeTarget "RobotFind" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CC6807CEA990D533D2C3A1BE /* Release */,
+				18AF39BE5C0C12C11870E923 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5D7DDE6E221243DD6E6BA6CF /* Build configuration list for PBXProject "RobotFind" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EE3943C6F71C6A04EAC4D429 /* Debug */,
+				63FFAF3B48AB1F09300A6CC5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 11337EEFABA45A6517C3CFA3 /* Project object */;
+}
