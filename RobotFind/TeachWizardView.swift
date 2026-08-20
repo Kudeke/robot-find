@@ -3,20 +3,16 @@
 
 import SwiftUI
 import AVFoundation
-import Vision
 
-// MARK: - Teach camera model (camera preview + feature print capture)
+// MARK: - Teach camera model (camera preview + guided capture)
 
-final class TeachCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+final class TeachCameraModel: NSObject, ObservableObject {
     let session = AVCaptureSession()
     @Published var hasCameraInput = false
 
-    private let captureQueue = DispatchQueue(label: "com.fmt.teach", qos: .userInitiated)
+    private let sessionQueue = DispatchQueue(label: "com.fmt.teach", qos: .userInitiated)
     private var capturing = false
-    private var captureEndDate = Date.distantPast
-    private var collectedBuffers: [CMSampleBuffer] = []
-    private var frameCounter = 0
-    private var completionHandler: (([VNFeaturePrintObservation]) -> Void)?
+    private var captureWorkItem: DispatchWorkItem?
 
     func setup() {
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
@@ -24,69 +20,35 @@ final class TeachCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
         session.beginConfiguration()
         session.sessionPreset = .medium
         if session.canAddInput(input) { session.addInput(input) }
-        let output = AVCaptureVideoDataOutput()
-        output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
-        output.alwaysDiscardsLateVideoFrames = true
-        output.setSampleBufferDelegate(self, queue: captureQueue)
-        if session.canAddOutput(output) {
-            session.addOutput(output)
-            if let conn = output.connection(with: .video), conn.isVideoOrientationSupported {
-                conn.videoOrientation = .portrait
-            }
-        }
         session.commitConfiguration()
-        captureQueue.async { [weak self] in
+        sessionQueue.async { [weak self] in
             self?.session.startRunning()
             DispatchQueue.main.async { self?.hasCameraInput = true }
         }
     }
 
     // Call from main thread; completion called on main thread
-    func capture(duration: TimeInterval, completion: @escaping ([VNFeaturePrintObservation]) -> Void) {
-        captureQueue.async { [weak self] in
+    func capture(duration: TimeInterval, completion: @escaping () -> Void) {
+        sessionQueue.async { [weak self] in
             guard let self else { return }
-            self.collectedBuffers.removeAll()
-            self.frameCounter = 0
-            self.captureEndDate = Date().addingTimeInterval(duration)
-            self.completionHandler = { prints in DispatchQueue.main.async { completion(prints) } }
+            self.captureWorkItem?.cancel()
             self.capturing = true
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self, self.capturing else { return }
+                self.capturing = false
+                DispatchQueue.main.async { completion() }
+            }
+            self.captureWorkItem = workItem
+            self.sessionQueue.asyncAfter(deadline: .now() + duration, execute: workItem)
         }
     }
 
     func stop() {
-        captureQueue.async { [weak self] in self?.session.stopRunning() }
-    }
-
-    // Runs on captureQueue (serial) — no concurrent access issues
-    func captureOutput(_ output: AVCaptureOutput,
-                       didOutput sampleBuffer: CMSampleBuffer,
-                       from connection: AVCaptureConnection) {
-        guard capturing else { return }
-        frameCounter += 1
-
-        // Collect ~1 frame per 0.3 s (every 9th frame at 30 fps → 6 frames per 1.8 s clip)
-        if frameCounter % 9 == 0, Date() < captureEndDate {
-            collectedBuffers.append(sampleBuffer)
+        sessionQueue.async { [weak self] in
+            self?.captureWorkItem?.cancel()
+            self?.capturing = false
+            self?.session.stopRunning()
         }
-
-        guard Date() >= captureEndDate else { return }
-        capturing = false
-        let buffers = collectedBuffers
-        collectedBuffers.removeAll()
-        let done = completionHandler
-        completionHandler = nil
-
-        // Extract feature prints synchronously on this queue, then deliver
-        var prints: [VNFeaturePrintObservation] = []
-        for buf in buffers {
-            guard let px = CMSampleBufferGetImageBuffer(buf) else { continue }
-            let req = VNGenerateImageFeaturePrintRequest()
-            try? VNImageRequestHandler(cvPixelBuffer: px, options: [:]).perform([req])
-            if let obs = req.results?.first as? VNFeaturePrintObservation {
-                prints.append(obs)
-            }
-        }
-        done?(prints)
     }
 }
 
@@ -112,10 +74,9 @@ struct TeachWizardView: View {
     @State private var storageFull = false
     @State private var micAllowed = true
 
-    // Vision / camera
+    // Camera guidance
     @State private var itemID = UUID().uuidString
     @StateObject private var teachCamera = TeachCameraModel()
-    @State private var collectedPrints: [VNFeaturePrintObservation] = []
 
     private let totalSteps = 5
     private let angles = ["Front view", "Side view", "Top view", "Different background"]
@@ -145,7 +106,7 @@ struct TeachWizardView: View {
                 micAllowed = AVAudioSession.sharedInstance().recordPermission == .granted
             }
             .onChange(of: step) { _, newStep in
-                let stepNames = ["", "Name your item", "Tips for recording", "Record videos", "Training", "Done"]
+                let stepNames = ["", "Name your item", "Tips for recording", "Record videos", "Preparing item", "Done"]
                 let name = stepNames.indices.contains(newStep) ? stepNames[newStep] : "Step \(newStep)"
                 UIAccessibility.post(notification: .screenChanged, argument: "Step \(newStep) of \(totalSteps). \(name).")
                 if newStep == 3 { teachCamera.setup() }
@@ -472,21 +433,21 @@ struct TeachWizardView: View {
                     startRecording()
                 }
 
-                Text(allDone ? "Tap Next to train the model"
+                Text(allDone ? "Tap Prepare item to finish capture"
                      : (isRecording ? "Recording\u{2026}" : "Tap to record"))
                     .font(.system(size: 16))
                     .foregroundStyle(Color.white.opacity(0.7))
                     .accessibilityAddTraits(.updatesFrequently)
 
-                // Train now / Next
+                // Prepare / Next
                 Button {
                     if allDone {
                         trainProgress = 0
                         step = 4
-                        startTraining()
+                        startPreparingItem()
                     }
                 } label: {
-                    Text(allDone ? "Train now" : "Next")
+                    Text(allDone ? "Prepare item" : "Next")
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(allDone ? FMTTheme.onAccent : FMTTheme.onAccent.opacity(0.45))
                         .frame(maxWidth: .infinity, minHeight: 60)
@@ -494,10 +455,10 @@ struct TeachWizardView: View {
                         .clipShape(RoundedRectangle(cornerRadius: FMTTheme.Radius.row))
                 }
                 .disabled(!allDone)
-                .accessibilityLabel(allDone ? "Train now" : "Next")
+                .accessibilityLabel(allDone ? "Prepare item" : "Next")
                 .accessibilityHint(allDone
-                    ? "Trains the model on your videos, step 4 of 5"
-                    : "Continues to training when all 4 clips are recorded")
+                    ? "Prepares this item, step 4 of 5"
+                    : "Continues when all 4 clips are recorded")
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 28)
@@ -575,7 +536,7 @@ struct TeachWizardView: View {
         .aspectRatio(0.75, contentMode: .fit)
     }
 
-    // MARK: ─ Step 4: Training ─────────────────────────────────────────────
+    // MARK: ─ Step 4: Preparing ────────────────────────────────────────────
 
     private var step4: some View {
         let done = trainProgress >= 100
@@ -584,7 +545,7 @@ struct TeachWizardView: View {
             Spacer()
 
             if trainFailed {
-                // ── Training failure state ──────────────────────────────
+                // ── Preparation failure state ───────────────────────────
                 VStack(spacing: 24) {
                     Circle()
                         .fill(Color(hex: 0xFFEAEA))
@@ -604,7 +565,7 @@ struct TeachWizardView: View {
                             .multilineTextAlignment(.center)
                             .accessibilityAddTraits(.isHeader)
 
-                        Text("I wasn\u{2019}t able to learn your \(itemName.isEmpty ? "item" : itemName) this time. Let\u{2019}s try recording the videos again.")
+                        Text("I wasn\u{2019}t able to complete the capture for your \(itemName.isEmpty ? "item" : itemName) this time. Let\u{2019}s try recording the videos again.")
                             .font(.system(size: 17))
                             .foregroundStyle(FMTTheme.textSecondary)
                             .multilineTextAlignment(.center)
@@ -653,19 +614,19 @@ struct TeachWizardView: View {
                                 .foregroundStyle(FMTTheme.text)
                         }
                     }
-                    .accessibilityLabel("Training, \(Int(trainProgress)) percent complete")
+                    .accessibilityLabel("Preparing item, \(Int(trainProgress)) percent complete")
                     .accessibilityAddTraits(.updatesFrequently)
 
                     VStack(spacing: 10) {
-                        Text(done ? "Done!" : "Teaching me\u{2026}")
+                        Text(done ? "Capture complete" : "Preparing item\u{2026}")
                             .font(.system(size: 28, weight: .bold))
                             .tracking(-0.4)
                             .foregroundStyle(FMTTheme.text)
                             .accessibilityAddTraits(.isHeader)
 
                         Text(done
-                             ? "I learned your \(itemName.isEmpty ? "item" : itemName)."
-                             : "Teaching me about your \(itemName.isEmpty ? "item" : itemName). This will take just a few seconds.")
+                             ? "Your \(itemName.isEmpty ? "item" : itemName) is saved for the next search flow."
+                             : "Checking the guided capture for your \(itemName.isEmpty ? "item" : itemName). This will take just a few seconds.")
                             .font(.system(size: 19))
                             .foregroundStyle(FMTTheme.textSecondary)
                             .multilineTextAlignment(.center)
@@ -711,7 +672,7 @@ struct TeachWizardView: View {
 
                     (Text("I can now find your ")
                      + Text(itemName.isEmpty ? "item" : itemName).bold().foregroundColor(FMTTheme.text)
-                     + Text(". Want to try it?"))
+                     + Text(". Want to try the next search flow?"))
                         .font(.system(size: 19))
                         .foregroundStyle(FMTTheme.textSecondary)
                         .multilineTextAlignment(.center)
@@ -725,7 +686,7 @@ struct TeachWizardView: View {
             VStack(spacing: 12) {
                 bottomButton(
                     label: "Try finding it now",
-                    hint: "Goes to scanning with this item selected",
+                    hint: "Goes to the temporary search screen with this item selected",
                     systemImage: "magnifyingglass",
                     enabled: true
                 ) {
@@ -787,32 +748,28 @@ struct TeachWizardView: View {
     private func startRecording() {
         isRecording = true
         UIAccessibility.post(notification: .announcement, argument: "Recording started.")
-        teachCamera.capture(duration: 1.8) { prints in
-            collectedPrints.append(contentsOf: prints)
+        teachCamera.capture(duration: 1.8) {
             isRecording = false
             clipsRecorded = min(4, clipsRecorded + 1)
             let remaining = 4 - clipsRecorded
             let msg = remaining > 0
                 ? "\(clipsRecorded) of 4 recorded. \(remaining) remaining."
-                : "All 4 videos recorded. Tap Train now."
+                : "All 4 videos recorded. Tap Prepare item."
             UIAccessibility.post(notification: .announcement, argument: msg)
         }
     }
 
-    private func startTraining() {
+    private func startPreparingItem() {
         trainProgress = 0
 
-        guard !collectedPrints.isEmpty else {
+        guard clipsRecorded >= 4 else {
             trainFailed = true
             UIAccessibility.post(notification: .announcement,
-                                 argument: "Training failed. Tap Re-record videos to try again.")
+                                 argument: "Capture incomplete. Tap Re-record videos to try again.")
             return
         }
 
-        // Persist feature prints keyed by this item's ID
-        FeaturePrintStore.shared.save(collectedPrints, for: itemID)
-
-        // Animate progress to 100 % (actual work is already done above)
+        // Temporary Phase 0 completion: guided captures are validated but not persisted yet.
         func tick() {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
                 guard trainProgress < 100 else { return }
@@ -820,7 +777,7 @@ struct TeachWizardView: View {
                 let pct = Int(trainProgress)
                 if [25, 50, 75, 100].contains(pct) {
                     UIAccessibility.post(notification: .announcement,
-                                         argument: "Training \(pct) percent complete.")
+                                         argument: "Preparing item \(pct) percent complete.")
                 }
                 tick()
             }

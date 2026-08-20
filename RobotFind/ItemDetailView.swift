@@ -3,7 +3,7 @@
 
 import SwiftUI
 
-// MARK: - Training video angle labels
+// MARK: - Guided view angle labels
 
 private enum VideoAngle: CaseIterable {
     case front, side, top, otherBg
@@ -22,9 +22,9 @@ private enum VideoAngle: CaseIterable {
 private extension FMTItem.Confidence {
     var displayLabel: String {
         switch self {
-        case .high:   return "High confidence"
-        case .medium: return "Medium"
-        case .low:    return "Low — re-train"
+        case .high:   return "Capture complete"
+        case .medium: return "More views helpful"
+        case .low:    return "More views recommended"
         }
     }
     var color: Color {
@@ -36,9 +36,9 @@ private extension FMTItem.Confidence {
     }
     var accessibilityLabel: String {
         switch self {
-        case .high:   return "High confidence"
-        case .medium: return "Medium confidence"
-        case .low:    return "Low confidence, re-training recommended"
+        case .high:   return "Capture complete"
+        case .medium: return "More views helpful"
+        case .low:    return "More guided views recommended"
         }
     }
 }
@@ -58,8 +58,8 @@ struct ItemDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 subtitleRow
-                recognitionCard
-                trainingVideosSection
+                captureStatusCard
+                guidedViewsSection
                 actionButtons
             }
             .padding(.bottom, 40)
@@ -79,25 +79,25 @@ struct ItemDetailView: View {
         }
     }
 
-    // MARK: - Subtitle row ("Trained … • N videos")
+    // MARK: - Subtitle row ("Captured … • N views")
 
     private var subtitleRow: some View {
-        Text("Trained \(item.trainedOn) · \(item.clips) videos")
+        Text("Captured \(item.trainedOn) · \(item.clips) views")
             .font(.system(size: 17))
             .foregroundStyle(FMTTheme.textSecondary)
             .padding(.horizontal, FMTTheme.Spacing.xl)
             .padding(.top, 4)
             .padding(.bottom, 20)
-            .accessibilityLabel("Trained on \(item.trainedOn), \(item.clips) videos")
+            .accessibilityLabel("Captured on \(item.trainedOn), \(item.clips) views")
     }
 
-    // MARK: - Recognition card
+    // MARK: - Capture status card
 
-    private var recognitionCard: some View {
+    private var captureStatusCard: some View {
         HStack(spacing: 18) {
             FMTItemThumbnail(kind: item.kind, size: 88)
             VStack(alignment: .leading, spacing: 4) {
-                Text("RECOGNITION")
+                Text("CAPTURE STATUS")
                     .font(.system(size: 13, weight: .semibold))
                     .kerning(0.5)
                     .foregroundStyle(FMTTheme.textSecondary)
@@ -113,14 +113,14 @@ struct ItemDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: FMTTheme.Radius.card))
         .padding(.horizontal, FMTTheme.Spacing.xl)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Recognition: \(item.confidence.accessibilityLabel)")
+        .accessibilityLabel("Capture status: \(item.confidence.accessibilityLabel)")
     }
 
-    // MARK: - Training videos strip
+    // MARK: - Guided views strip
 
-    private var trainingVideosSection: some View {
+    private var guidedViewsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("TRAINING VIDEOS")
+            Text("GUIDED VIEWS")
                 .font(.system(size: 13, weight: .semibold))
                 .kerning(0.5)
                 .foregroundStyle(FMTTheme.textSecondary)
@@ -130,7 +130,7 @@ struct ItemDetailView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(Array(VideoAngle.allCases.enumerated()), id: \.offset) { index, angle in
-                        TrainingVideoThumb(
+                        GuidedViewThumb(
                             item: item,
                             index: index + 1,
                             angle: angle
@@ -160,14 +160,14 @@ struct ItemDetailView: View {
             .accessibilityHint("Starts scanning for \(item.name)")
 
             FMTBigButton(
-                title: "Add more training videos",
+                title: "Capture more views",
                 systemImage: "plus",
                 style: .secondary
             ) {
                 // TODO: push to Teach re-train wizard
             }
-            .accessibilityLabel("Add more training videos")
-            .accessibilityHint("Records additional training videos to improve recognition")
+            .accessibilityLabel("Capture more views")
+            .accessibilityHint("Records additional guided views for \(item.name)")
 
             FMTBigButton(
                 title: "Delete item",
@@ -245,15 +245,14 @@ struct ItemDetailView: View {
 
     private func commitDelete() {
         withAnimation { showUndoToast = false }
-        FeaturePrintStore.shared.delete(for: item.id)
         onDelete(item.id)
         dismiss()
     }
 }
 
-// MARK: - Training video thumbnail
+// MARK: - Guided view thumbnail
 
-private struct TrainingVideoThumb: View {
+private struct GuidedViewThumb: View {
     let item: FMTItem
     let index: Int
     let angle: VideoAngle
@@ -306,7 +305,7 @@ private struct TrainingVideoThumb: View {
                 .padding(8)
         }
         .frame(width: 110, height: 150)
-        .accessibilityLabel("Training video \(index) of 4, \(angle.label) view")
+        .accessibilityLabel("Guided view \(index) of 4, \(angle.label) view")
         .accessibilityHint("Double tap to play")
         .accessibilityAddTraits(.isButton)
     }

@@ -216,7 +216,6 @@ struct LibraryView: View {
     // MARK: - Delete
 
     private func deleteItem(_ item: FMTItem) {
-        FeaturePrintStore.shared.delete(for: item.id)
         withAnimation {
             items.removeAll { $0.id == item.id }
         }

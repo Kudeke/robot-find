@@ -23,7 +23,6 @@
 		D3CF664B80411DA4FA813870 /* TeachWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B47128061A1FA952766C896 /* TeachWizardView.swift */; };
 		D9C81214EC46FF8338F32366 /* ErrorStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB589C93AE37E7E0B0DD13E /* ErrorStateView.swift */; };
 		F29383D68C7D44C11ED552BA /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF7395A567E28E4CCE798881 /* LibraryView.swift */; };
-		E1F2A3B4C5D6E7F8A9B0C1D2 /* FeaturePrintStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2A3B4C5D6E7F8A9B0C1D2E3 /* FeaturePrintStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,7 +43,6 @@
 		D8983E76401A8790EBFC314A /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS14.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		DF7395A567E28E4CCE798881 /* LibraryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		FD3898F1EAE5D1C418270F91 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		F2A3B4C5D6E7F8A9B0C1D2E3 /* FeaturePrintStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FeaturePrintStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -110,7 +108,6 @@
 				068AAEA5A43D32F255276AAD /* FoundView.swift */,
 				531907D7238C938848745B5F /* OnboardingView.swift */,
 				1DB589C93AE37E7E0B0DD13E /* ErrorStateView.swift */,
-				F2A3B4C5D6E7F8A9B0C1D2E3 /* FeaturePrintStore.swift */,
 			);
 			path = RobotFind;
 			sourceTree = "<group>";
@@ -198,7 +195,6 @@
 				4F81C7DB36718C69A26EB1AA /* FoundView.swift in Sources */,
 				C2D376AD6B2AB7A66E555ABE /* OnboardingView.swift in Sources */,
 				D9C81214EC46FF8338F32366 /* ErrorStateView.swift in Sources */,
-				E1F2A3B4C5D6E7F8A9B0C1D2 /* FeaturePrintStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -218,7 +214,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = RobotFind;
 				INFOPLIST_KEY_CFBundleName = RobotFind;
-				INFOPLIST_KEY_NSCameraUsageDescription = "RobotFind uses the camera to recognise your objects and guide you to them.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "RobotFind uses the camera for guided item teaching.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "The microphone lets you dictate item names during teaching.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
@@ -299,7 +295,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = RobotFind;
 				INFOPLIST_KEY_CFBundleName = RobotFind;
-				INFOPLIST_KEY_NSCameraUsageDescription = "RobotFind uses the camera to recognise your objects and guide you to them.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "RobotFind uses the camera for guided item teaching.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "The microphone lets you dictate item names during teaching.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;

@@ -321,7 +321,7 @@ struct StorageFullView: View {
     RecoveryView(
         systemImage: "camera.fill",
         title: "Camera access needed",
-        message: "RobotFind needs camera access to find your items.",
+        message: "RobotFind needs camera access for guided item teaching.",
         secondaryLabel: "Not now",
         secondaryAction: {}
     )

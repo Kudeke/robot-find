@@ -141,7 +141,7 @@ struct FMTItemRow: View {
         .background(FMTTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: FMTTheme.Radius.row))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(item.name). \(item.status == .ready ? "Ready" : "Needs more training"). Last used \(item.lastUsed).")
+        .accessibilityLabel("\(item.name). \(item.status == .ready ? "Ready" : "Needs more views"). Last used \(item.lastUsed).")
         .accessibilityHint("Opens item details")
         .accessibilityAddTraits(.isButton)
     }
@@ -177,13 +177,13 @@ private struct StatusBadge: View {
         switch status {
         case .ready:
             return ("Ready", FMTTheme.success, FMTTheme.successBg)
-        case .needsTraining:
-            return ("Needs training", FMTTheme.warning, FMTTheme.warningBg)
+        case .needsViews:
+            return ("Needs views", FMTTheme.warning, FMTTheme.warningBg)
         }
     }
 }
 
-// MARK: - 物品缩略图 (占位 — 后续替换为真实训练帧)
+// MARK: - 物品缩略图 (占位 — 后续替换为真实捕获帧)
 
 struct FMTItemThumbnail: View {
     let kind: FMTItem.ItemKind

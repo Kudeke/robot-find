@@ -39,8 +39,8 @@ struct PermissionsFlow: View {
             PermissionScreen(
                 systemImage: "camera.fill",
                 title: "Camera access",
-                rationale: "RobotFind uses the camera to recognise your objects and guide you to them.",
-                whyText: "The camera feed never leaves your device. It is only processed on-chip by the AI model.",
+                rationale: "RobotFind uses the camera for guided item teaching.",
+                whyText: "The camera feed is used for live teaching guidance and is not stored in this phase.",
                 allowLabel: "Allow Camera"
             ) {
                 AVCaptureDevice.requestAccess(for: .video) { _ in

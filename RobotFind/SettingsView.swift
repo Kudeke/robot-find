@@ -22,9 +22,8 @@ final class FMTSettings: ObservableObject {
     @AppStorage("foundChime")  var foundChime: FoundChime = .chord
     @AppStorage("cueVolume")   var cueVolume: Double      = 0.8
 
-    // Camera & Detection
+    // Search preferences
     @AppStorage("sensitivity") var sensitivity: Sensitivity = .balanced
-    @AppStorage("lidar")       var lidar: LidarMode         = .auto
     @AppStorage("lowLightBoost") var lowLightBoost: Bool    = true
     @AppStorage("maxScanTime") var maxScanTime: MaxScanTime = .sixty
 
@@ -50,9 +49,6 @@ final class FMTSettings: ObservableObject {
     }
     enum Sensitivity: String, CaseIterable {
         case conservative = "Conservative", balanced = "Balanced", aggressive = "Aggressive"
-    }
-    enum LidarMode: String, CaseIterable {
-        case auto = "Auto", on = "On", off = "Off"
     }
     enum MaxScanTime: String, CaseIterable {
         case thirty = "30 seconds", sixty = "60 seconds", ninety = "90 seconds"
@@ -176,32 +172,27 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: Camera & Detection
+    // MARK: Search Preferences
 
     private var cameraDetectionSection: some View {
         Section {
             PickerRow(
                 label: "Sensitivity",
-                hint: "Conservative finds fewer false matches",
+                hint: "Preserved for the next search flow",
                 selection: $settings.sensitivity
-            )
-            PickerRow(
-                label: "Use LiDAR",
-                hint: "Use LiDAR for distance when available",
-                selection: $settings.lidar
             )
             ToggleRow(
                 label: "Low-light boost",
-                hint: "Brightens the camera preview in dark environments",
+                hint: "Preserved for teaching and future search flows",
                 isOn: $settings.lowLightBoost
             )
             PickerRow(
                 label: "Max scan time",
-                hint: "How long to scan before giving up",
+                hint: "Preserved for the next search flow",
                 selection: $settings.maxScanTime
             )
         } header: {
-            SectionHeader("Camera & Detection")
+            SectionHeader("Search preferences")
         }
     }
 

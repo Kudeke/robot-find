@@ -30,7 +30,7 @@ struct FMTItem: Identifiable, Hashable, Codable {
             }
         }
     }
-    enum Status: String, Codable { case ready, needsTraining }
+    enum Status: String, Codable { case ready, needsViews }
     enum Confidence: String, Codable { case high, medium, low }
 
     static let seed: [FMTItem] = [
@@ -42,7 +42,7 @@ struct FMTItem: Identifiable, Hashable, Codable {
               lastUsed: "2 days ago",     confidence: .high,   trainedOn: "Apr 02, 2026", clips: 4),
         .init(id: "headphones", name: "AirPods case",       kind: .headphones, status: .ready,
               lastUsed: "3 days ago",     confidence: .medium, trainedOn: "Mar 28, 2026", clips: 4),
-        .init(id: "wallet",     name: "Brown wallet",       kind: .wallet,     status: .needsTraining,
+        .init(id: "wallet",     name: "Brown wallet",       kind: .wallet,     status: .needsViews,
               lastUsed: "Last week",      confidence: .low,    trainedOn: "Mar 14, 2026", clips: 2),
         .init(id: "remote",     name: "TV remote",          kind: .remote,     status: .ready,
               lastUsed: "Last week",      confidence: .medium, trainedOn: "Mar 12, 2026", clips: 4),
@@ -82,7 +82,7 @@ struct HomeView: View {
                     VStack(spacing: 12) {
                         FMTBigButton(
                             title: "Find an item",
-                            subtitle: "Scan with the camera",
+                            subtitle: "Prepare robot search",
                             systemImage: "magnifyingglass",
                             style: .primary
                         ) { showPicker = true }
