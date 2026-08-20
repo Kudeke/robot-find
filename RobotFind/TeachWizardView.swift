@@ -11,8 +11,14 @@ import UIKit
 final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
     let session = ARSession()
     @Published var hasCameraInput = false
+    @Published private(set) var distanceProgress: Double = 0
+    @Published private(set) var guidanceText = "Center the item to begin guided capture."
 
     private let sessionQueue = DispatchQueue(label: "com.fmt.teach", qos: .userInitiated)
+    private let targetDistance: Float = 0.45
+    private let minimumDistance: Float = 0.25
+    private let maximumDistance: Float = 0.85
+    private var teachingAnchor: ARAnchor?
     private var captureStartedAt: Date?
     private var sampleTargets: [Double] = []
     private var sampledTargets = Set<Double>()
@@ -25,6 +31,7 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
         session.delegate = self
         session.delegateQueue = sessionQueue
         let configuration = ARWorldTrackingConfiguration()
+        configuration.planeDetection = [.horizontal]
         sessionQueue.async { [weak self] in
             self?.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
             DispatchQueue.main.async { self?.hasCameraInput = true }
@@ -58,9 +65,15 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
     }
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        if teachingAnchor == nil {
+            placeTeachingAnchor(from: frame)
+        }
+        let distanceIsGood = updateDistanceGuidance(from: frame)
+
         guard let startedAt = captureStartedAt,
               let sampleHandler,
               let target = sampleTargets.first(where: { !sampledTargets.contains($0) }),
+              distanceIsGood,
               Date().timeIntervalSince(startedAt) / 1.8 >= target else { return }
         do {
             try sampleHandler(frame.capturedImage)
@@ -77,12 +90,78 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
 
     func stop() {
         sessionQueue.async { [weak self] in
+            if let anchor = self?.teachingAnchor {
+                self?.session.remove(anchor: anchor)
+            }
+            self?.teachingAnchor = nil
             self?.captureWorkItem?.cancel()
             self?.captureStartedAt = nil
             self?.sampleHandler = nil
             self?.captureCompletion = nil
+            DispatchQueue.main.async {
+                self?.distanceProgress = 0
+                self?.guidanceText = "Center the item to begin guided capture."
+            }
             self?.session.pause()
         }
+    }
+
+    private func placeTeachingAnchor(from frame: ARFrame) {
+        var transform = frame.camera.transform
+        let forwardOffset = SIMD4<Float>(0, 0, -0.55, 0)
+        transform.columns.3 += transform * forwardOffset
+
+        let query = ARRaycastQuery(
+            origin: frame.camera.transform.translation,
+            direction: -frame.camera.transform.forward,
+            allowing: .estimatedPlane,
+            alignment: .horizontal
+        )
+        if let result = session.raycast(query).first {
+            transform = result.worldTransform
+        }
+
+        let anchor = ARAnchor(name: "RobotFindTeachingAnchor", transform: transform)
+        teachingAnchor = anchor
+        session.add(anchor: anchor)
+        print("[TeachCapture] AR teaching anchor placed")
+    }
+
+    private func updateDistanceGuidance(from frame: ARFrame) -> Bool {
+        guard let anchor = teachingAnchor else { return false }
+        let cameraPosition = frame.camera.transform.translation
+        let anchorPosition = anchor.transform.translation
+        let distance = simd_distance(cameraPosition, anchorPosition)
+        let progress = max(0, 1 - abs(distance - targetDistance) / (maximumDistance - minimumDistance))
+        let clampedProgress = min(1, progress)
+        let text: String
+        if distance < minimumDistance {
+            text = "Move slightly farther from the item."
+        } else if distance > maximumDistance {
+            text = "Move closer to the item."
+        } else if clampedProgress < 0.7 {
+            text = "Hold the phone about one foot away."
+        } else if captureStartedAt != nil {
+            text = "Good distance. Move slowly around the item."
+        } else {
+            text = "Good distance. Tap capture when ready."
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.distanceProgress = Double(clampedProgress)
+            self?.guidanceText = text
+        }
+        return clampedProgress >= 0.7
+    }
+}
+
+private extension simd_float4x4 {
+    var translation: SIMD3<Float> {
+        SIMD3<Float>(columns.3.x, columns.3.y, columns.3.z)
+    }
+
+    var forward: SIMD3<Float> {
+        SIMD3<Float>(-columns.2.x, -columns.2.y, -columns.2.z)
     }
 }
 
@@ -551,11 +630,19 @@ struct TeachWizardView: View {
                 .padding(.top, 20)
             }
 
-            // Coaching caption
-            Text(isRecording ? "Good, keep going. Move slowly." : "Hold the phone about one foot away.")
-                .font(.system(size: 15))
-                .foregroundStyle(Color.white)
-                .multilineTextAlignment(.center)
+            // Distance-based coaching caption and progress
+            VStack(spacing: 8) {
+                Text(teachCamera.guidanceText)
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color.white)
+                    .multilineTextAlignment(.center)
+
+                ProgressView(value: teachCamera.distanceProgress)
+                    .tint(teachCamera.distanceProgress >= 0.7 ? Color.green : Color.yellow)
+                    .frame(width: 150)
+                    .accessibilityLabel("Distance guidance")
+                    .accessibilityValue("\(Int(teachCamera.distanceProgress * 100)) percent")
+            }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .background(.ultraThinMaterial)
@@ -564,9 +651,7 @@ struct TeachWizardView: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
                 .accessibilityAddTraits(.updatesFrequently)
-                .accessibilityLabel(isRecording
-                    ? "Live coaching: Good, keep going"
-                    : "Live coaching: Hold the phone about one foot away")
+                .accessibilityLabel("Live distance guidance: \(teachCamera.guidanceText)")
         }
         .frame(maxWidth: .infinity)
         .aspectRatio(0.75, contentMode: .fit)
