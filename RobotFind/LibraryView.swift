@@ -71,7 +71,8 @@ struct LibraryView: View {
                     lastUsed: "Just now",
                     confidence: .high,
                     trainedOn: HomeView.todayString(),
-                    clips: 4
+                    clips: 4,
+                    objectProfile: result.objectProfile
                 )
                 items.append(newItem)
             }

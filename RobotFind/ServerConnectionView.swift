@@ -136,7 +136,7 @@ struct ServerConnectionView: View {
 
     private func connect() {
         guard let sshPort = Int(sshPort), let qwenAPIPort = Int(qwenAPIPort) else {
-            validationMessage = "SSH Port and Qwen API Port must contain numbers only. Enter 141.3.14.47 in Server and 22 in SSH Port."
+            validationMessage = "SSH Port and Qwen API Port must contain numbers only. Enter the server address in Server and a number such as 22 in SSH Port."
             return
         }
         let config = ServerConnectionConfig(

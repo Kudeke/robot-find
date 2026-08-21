@@ -27,6 +27,8 @@
 		E4D9F0123456789ABCDEF012 /* SSHConnectionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4D9F0123456789ABCDEF012 /* SSHConnectionManager.swift */; };
 		E5E0123456789ABCDEF01234 /* ServerHealthClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5E0123456789ABCDEF01234 /* ServerHealthClient.swift */; };
 		E6F123456789ABCDEF012345 /* ServerConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6F123456789ABCDEF012345 /* ServerConnectionView.swift */; };
+		E7A23456789ABCDEF0123456 /* ObjectProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7A23456789ABCDEF0123456 /* ObjectProfile.swift */; };
+		E8B3456789ABCDEF01234567 /* ServerAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8B3456789ABCDEF01234567 /* ServerAPI.swift */; };
 		D9C81214EC46FF8338F32366 /* ErrorStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB589C93AE37E7E0B0DD13E /* ErrorStateView.swift */; };
 		F29383D68C7D44C11ED552BA /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF7395A567E28E4CCE798881 /* LibraryView.swift */; };
 /* End PBXBuildFile section */
@@ -54,6 +56,8 @@
 		F4D9F0123456789ABCDEF012 /* SSHConnectionManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SSHConnectionManager.swift; sourceTree = "<group>"; };
 		F5E0123456789ABCDEF01234 /* ServerHealthClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ServerHealthClient.swift; sourceTree = "<group>"; };
 		F6F123456789ABCDEF012345 /* ServerConnectionView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ServerConnectionView.swift; sourceTree = "<group>"; };
+		F7A23456789ABCDEF0123456 /* ObjectProfile.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ObjectProfile.swift; sourceTree = "<group>"; };
+		F8B3456789ABCDEF01234567 /* ServerAPI.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ServerAPI.swift; sourceTree = "<group>"; };
 		FD3898F1EAE5D1C418270F91 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -121,6 +125,8 @@
 				F4D9F0123456789ABCDEF012 /* SSHConnectionManager.swift */,
 				F5E0123456789ABCDEF01234 /* ServerHealthClient.swift */,
 				F6F123456789ABCDEF012345 /* ServerConnectionView.swift */,
+				F7A23456789ABCDEF0123456 /* ObjectProfile.swift */,
+				F8B3456789ABCDEF01234567 /* ServerAPI.swift */,
 				32278816D6809612A367081A /* ItemPickerView.swift */,
 				AB72ED5E71516E941776A90B /* ScanningView.swift */,
 				068AAEA5A43D32F255276AAD /* FoundView.swift */,
@@ -220,6 +226,8 @@
 				E4D9F0123456789ABCDEF012 /* SSHConnectionManager.swift in Sources */,
 				E5E0123456789ABCDEF01234 /* ServerHealthClient.swift in Sources */,
 				E6F123456789ABCDEF012345 /* ServerConnectionView.swift in Sources */,
+				E7A23456789ABCDEF0123456 /* ObjectProfile.swift in Sources */,
+				E8B3456789ABCDEF01234567 /* ServerAPI.swift in Sources */,
 				4C093FBB12CD3E0CBB67D9AA /* ItemPickerView.swift in Sources */,
 				886B5D8263FB54ECDBA560ED /* ScanningView.swift in Sources */,
 				4F81C7DB36718C69A26EB1AA /* FoundView.swift in Sources */,

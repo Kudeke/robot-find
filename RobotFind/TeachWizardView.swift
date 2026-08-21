@@ -212,6 +212,7 @@ struct TeachResult {
     let itemID: String
     let name: String
     let tryFind: Bool
+    let objectProfile: ObjectProfile?
 }
 
 struct TeachWizardView: View {
@@ -219,12 +220,15 @@ struct TeachWizardView: View {
     var onCancel: () -> Void = {}
     var onComplete: (TeachResult) -> Void = { _ in }
 
+    @EnvironmentObject private var connectionManager: SSHConnectionManager
+
     @State private var step = 1
     @State private var itemName = ""
     @State private var clipsRecorded = 0
     @State private var isRecording = false
-    @State private var trainProgress: Double = 0
-    @State private var trainFailed = false
+    @State private var analysisState: TeachAnalysisState = .idle
+    @State private var analyzedProfile: ObjectProfile?
+    @State private var analysisCanRetry = false
     @State private var storageFull = false
     @State private var micAllowed = true
 
@@ -598,7 +602,6 @@ struct TeachWizardView: View {
                 // Finish / Next
                 Button {
                     if allDone {
-                        trainProgress = 0
                         step = 4
                         startPreparingItem()
                     }
@@ -701,13 +704,10 @@ struct TeachWizardView: View {
     // MARK: ─ Step 4: Preparing ────────────────────────────────────────────
 
     private var step4: some View {
-        let done = trainProgress >= 100
-
-        return VStack(spacing: 0) {
+        VStack(spacing: 0) {
             Spacer()
 
-            if trainFailed {
-                // ── Preparation failure state ───────────────────────────
+            if case .failed(let message) = analysisState {
                 VStack(spacing: 24) {
                     Circle()
                         .fill(Color(hex: 0xFFEAEA))
@@ -722,12 +722,11 @@ struct TeachWizardView: View {
                     VStack(spacing: 10) {
                         Text("Something went wrong")
                             .font(.system(size: 26, weight: .bold))
-                            .tracking(-0.4)
                             .foregroundStyle(FMTTheme.text)
                             .multilineTextAlignment(.center)
                             .accessibilityAddTraits(.isHeader)
 
-                        Text("I wasn\u{2019}t able to complete the capture for your \(itemName.isEmpty ? "item" : itemName) this time. Let\u{2019}s try the guided views again.")
+                        Text(message)
                             .font(.system(size: 17))
                             .foregroundStyle(FMTTheme.textSecondary)
                             .multilineTextAlignment(.center)
@@ -739,56 +738,37 @@ struct TeachWizardView: View {
                 Spacer()
 
                 bottomButton(
-                    label: "Retry guided views",
-                    hint: "Goes back to the guided capture step",
+                    label: analysisCanRetry ? "Retry analysis" : "Retry guided views",
+                    hint: analysisCanRetry ? "Retries server analysis using the saved recordings" : "Goes back to the guided capture step",
                     systemImage: "arrow.counterclockwise",
                     enabled: true
                 ) {
-                    trainFailed = false
-                    clipsRecorded = 0
-                    step = 3
-                }
-
-            } else {
-                // ── Normal progress ring ────────────────────────────────
-                VStack(spacing: 28) {
-                    ZStack {
-                        Circle()
-                            .stroke(FMTTheme.separator, lineWidth: 10)
-                            .frame(width: 200, height: 200)
-
-                        Circle()
-                            .trim(from: 0, to: trainProgress / 100)
-                            .stroke(done ? FMTTheme.success : FMTTheme.accent,
-                                    style: StrokeStyle(lineWidth: 10, lineCap: .round))
-                            .frame(width: 200, height: 200)
-                            .rotationEffect(.degrees(-90))
-                            .animation(.easeInOut(duration: 0.2), value: trainProgress)
-
-                        if done {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 56, weight: .bold))
-                                .foregroundStyle(FMTTheme.success)
-                        } else {
-                            Text("\(Int(trainProgress))%")
-                                .font(.system(size: 56, weight: .bold))
-                                .tracking(-1.5)
-                                .foregroundStyle(FMTTheme.text)
-                        }
+                    if analysisCanRetry {
+                        startPreparingItem()
+                    } else {
+                        clipsRecorded = 0
+                        beginCaptureSession()
+                        step = 3
                     }
-                    .accessibilityLabel("Saving recordings, \(Int(trainProgress)) percent complete")
-                    .accessibilityAddTraits(.updatesFrequently)
+                }
+            } else {
+                VStack(spacing: 28) {
+                    ProgressView()
+                        .controlSize(.large)
+                        .tint(FMTTheme.accent)
+                        .frame(width: 120, height: 120)
+                        .background(FMTTheme.chipBg)
+                        .clipShape(Circle())
+                        .accessibilityLabel("Analyzing your item")
+                        .accessibilityAddTraits(.updatesFrequently)
 
                     VStack(spacing: 10) {
-                        Text(done ? "Item captured" : "Saving recordings\u{2026}")
+                        Text(analysisState == .validatingVideos ? "Checking recordings\u{2026}" : "Analyzing your item\u{2026}")
                             .font(.system(size: 28, weight: .bold))
-                            .tracking(-0.4)
                             .foregroundStyle(FMTTheme.text)
                             .accessibilityAddTraits(.isHeader)
 
-                        Text(done
-                             ? "Your recordings for \(itemName.isEmpty ? "item" : itemName) are saved for the next search flow."
-                             : "Checking the four recordings for your \(itemName.isEmpty ? "item" : itemName). This will take just a few seconds.")
+                        Text("Your four recordings are being sent securely through the connected server tunnel. This may take a moment.")
                             .font(.system(size: 19))
                             .foregroundStyle(FMTTheme.textSecondary)
                             .multilineTextAlignment(.center)
@@ -798,12 +778,6 @@ struct TeachWizardView: View {
                 .padding(.horizontal, 28)
 
                 Spacer()
-
-                bottomButton(
-                    label: "Continue",
-                    hint: "Goes to the final step",
-                    enabled: done
-                ) { step = 5 }
             }
         }
     }
@@ -840,6 +814,30 @@ struct TeachWizardView: View {
                         .multilineTextAlignment(.center)
                         .lineSpacing(3)
                 }
+
+                if let profile = analyzedProfile {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(profile.category)
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(FMTTheme.accent)
+                        Text(profile.visualDescription)
+                            .font(.system(size: 16))
+                            .foregroundStyle(FMTTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if !profile.distinctiveFeatures.isEmpty {
+                            Text("Distinctive features: \(profile.distinctiveFeatures.joined(separator: ", "))")
+                                .font(.system(size: 16))
+                                .foregroundStyle(FMTTheme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .background(FMTTheme.chipBg)
+                    .clipShape(RoundedRectangle(cornerRadius: FMTTheme.Radius.row))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Category: \(profile.category). \(profile.visualDescription). Distinctive features: \(profile.distinctiveFeatures.joined(separator: ", "))")
+                }
             }
             .padding(.horizontal, 28)
 
@@ -852,11 +850,11 @@ struct TeachWizardView: View {
                     systemImage: "magnifyingglass",
                     enabled: true
                 ) {
-                    onComplete(TeachResult(itemID: itemID, name: itemName.isEmpty ? "New item" : itemName, tryFind: true))
+                    onComplete(TeachResult(itemID: itemID, name: itemName.isEmpty ? "New item" : itemName, tryFind: true, objectProfile: analyzedProfile))
                 }
 
                 Button {
-                    onComplete(TeachResult(itemID: itemID, name: itemName.isEmpty ? "New item" : itemName, tryFind: false))
+                    onComplete(TeachResult(itemID: itemID, name: itemName.isEmpty ? "New item" : itemName, tryFind: false, objectProfile: analyzedProfile))
                 } label: {
                     Text("Save and finish")
                         .font(.system(size: 22, weight: .semibold))
@@ -932,9 +930,12 @@ struct TeachWizardView: View {
     private func beginCaptureSession() {
         do {
             try TeachCaptureStore.shared.startSession(itemID: itemID)
-            trainFailed = false
+            analysisState = .idle
+            analyzedProfile = nil
+            analysisCanRetry = false
         } catch {
-            trainFailed = true
+            analysisState = .failed("The capture folder could not be prepared. Please try again.")
+            analysisCanRetry = false
             print("[TeachCapture] session failed: \(error.localizedDescription)")
             UIAccessibility.post(notification: .announcement,
                                  argument: "The capture folder could not be prepared. Please try again.")
@@ -942,42 +943,49 @@ struct TeachWizardView: View {
     }
 
     private func startPreparingItem() {
-        trainProgress = 0
+        guard !analysisState.isWorking else { return }
+        analysisState = .validatingVideos
+        analysisCanRetry = false
 
-        guard clipsRecorded >= 4 else {
-            trainFailed = true
-            UIAccessibility.post(notification: .announcement,
-                                 argument: "Capture incomplete. Tap Retry guided views to try again.")
-            return
-        }
-
-        do {
-            let clips = try TeachCaptureStore.shared.validateClips(itemID: itemID)
-            print("[TeachVideo] teaching complete clips=\(clips.count)")
-            for clip in clips {
-                print("[TeachVideo] finalized \(clip.url.lastPathComponent) duration=\(clip.duration) size=\(clip.fileSize)")
-            }
-        } catch {
-            trainFailed = true
-            print("[TeachCapture] teaching failed: \(error.localizedDescription)")
-            UIAccessibility.post(notification: .announcement,
-                                 argument: "One or more recordings are not valid. Tap Retry guided views to try again.")
-            return
-        }
-
-        func tick() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-                guard trainProgress < 100 else { return }
-                trainProgress = min(100, trainProgress + 5)
-                let pct = Int(trainProgress)
-                if [25, 50, 75, 100].contains(pct) {
-                    UIAccessibility.post(notification: .announcement,
-                                         argument: "Saving recordings, \(pct) percent complete.")
+        Task { @MainActor in
+            do {
+                guard clipsRecorded >= 4 else {
+                    throw TeachCaptureError.incompleteClips(clipsRecorded)
                 }
-                tick()
+                let clips = try TeachCaptureStore.shared.validateClips(itemID: itemID)
+                print("[TeachVideo] teaching complete clips=\(clips.count)")
+                for clip in clips {
+                    print("[TeachVideo] finalized \(clip.url.lastPathComponent) duration=\(clip.duration) size=\(clip.fileSize)")
+                }
+
+                guard connectionManager.state == .connected,
+                      let baseURL = connectionManager.localBaseURL else {
+                    throw ServerAPIError.disconnected
+                }
+
+                analysisState = .analyzing
+                UIAccessibility.post(notification: .announcement, argument: "Analyzing your item. This may take a moment.")
+                let profile = try await ServerAPI(baseURL: baseURL).createObject(
+                    name: itemName.trimmingCharacters(in: .whitespacesAndNewlines),
+                    videoURLs: clips.map(\.url)
+                )
+                analyzedProfile = profile
+                analysisState = .completed(profile)
+                analysisCanRetry = false
+                UIAccessibility.post(notification: .announcement, argument: "Item analysis complete.")
+                step = 5
+            } catch let error as TeachCaptureError {
+                analysisCanRetry = false
+                analysisState = .failed("One or more recordings are missing or invalid. Please record the guided views again.")
+                print("[ObjectUpload] video validation failed: \(error.localizedDescription)")
+                UIAccessibility.post(notification: .announcement, argument: "The recorded videos could not be found. Please record the item again.")
+            } catch {
+                analysisCanRetry = true
+                analysisState = .failed(error.localizedDescription)
+                print("[ObjectUpload] failed: \(error.localizedDescription)")
+                UIAccessibility.post(notification: .announcement, argument: "The server could not analyze this item. You can retry.")
             }
         }
-        tick()
     }
 }
 
@@ -1150,4 +1158,5 @@ private extension View {
 
 #Preview {
     TeachWizardView(presetName: "Red coffee mug")
+        .environmentObject(SSHConnectionManager())
 }

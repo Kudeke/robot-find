@@ -14,6 +14,7 @@ struct FMTItem: Identifiable, Hashable, Codable {
     let confidence: Confidence
     let trainedOn: String
     let clips: Int
+    var objectProfile: ObjectProfile? = nil
 
     enum ItemKind: String, Codable {
         case keys, mug, cane, headphones, wallet, remote, charger, meds
@@ -199,7 +200,8 @@ struct HomeView: View {
                         lastUsed: "Just now",
                         confidence: .high,
                         trainedOn: Self.todayString(),
-                        clips: 4
+                        clips: 4,
+                        objectProfile: result.objectProfile
                     )
                     items.append(newItem)
                     if result.tryFind {
