@@ -59,6 +59,7 @@ final class FMTSettings: ObservableObject {
 
 struct SettingsView: View {
     @StateObject private var settings = FMTSettings()
+    @EnvironmentObject private var connectionManager: SSHConnectionManager
     @Environment(\.dismiss) private var dismiss
     @State private var hapticPlayed = false
 
@@ -69,6 +70,7 @@ struct SettingsView: View {
                 hapticsSection
                 audioCuesSection
                 cameraDetectionSection
+                serverConnectionSection
                 privacyHelpSection
 
                 Section {
@@ -90,6 +92,25 @@ struct SettingsView: View {
                         .accessibilityHint("Closes settings")
                 }
             }
+        }
+    }
+
+    private var serverConnectionSection: some View {
+        Section {
+            NavigationLink {
+                ServerConnectionView()
+            } label: {
+                HStack {
+                    Text("Server connection")
+                    Spacer()
+                    Text(connectionManager.state == .connected ? "Connected" : "Not connected")
+                        .foregroundStyle(connectionManager.state == .connected ? .green : FMTTheme.textSecondary)
+                }
+            }
+            .accessibilityLabel("Server connection, \(connectionManager.state.label)")
+            .accessibilityHint("Opens the manual SSH connection form")
+        } header: {
+            SectionHeader("Server")
         }
     }
 
@@ -397,4 +418,5 @@ where T.RawValue == String, T.AllCases: RandomAccessCollection {
 
 #Preview {
     SettingsView()
+        .environmentObject(SSHConnectionManager())
 }
