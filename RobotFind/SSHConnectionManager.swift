@@ -1,5 +1,6 @@
 import Foundation
 import Citadel
+import NIOSSH
 import NIOCore
 import NIOPosix
 
@@ -62,8 +63,7 @@ final class SSHConnectionManager: ObservableObject {
                 host: config.host,
                 port: config.sshPort,
                 authenticationMethod: { .passwordBased(username: config.username, password: config.password) },
-                hostKeyValidator: .acceptAnything(),
-                reconnect: .never
+                hostKeyValidator: .acceptAnything()
             )
             let client = try await SSHClient.connect(to: settings)
             print("[SSH] authentication succeeded")

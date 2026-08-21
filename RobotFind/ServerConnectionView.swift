@@ -84,7 +84,8 @@ struct ServerConnectionView: View {
                 }
             }
             .onChange(of: connectionManager.state) { _, newState in
-                isWorking = [.connecting, .authenticating, .forwarding, .checkingHealth].contains(where: { state in
+                let activeStates: [SSHConnectionState] = [.connecting, .authenticating, .forwarding, .checkingHealth]
+                isWorking = activeStates.contains(where: { state in
                     switch (state, newState) {
                     case (.connecting, _), (.authenticating, _), (.forwarding, _), (.checkingHealth, _): return true
                     default: return false
