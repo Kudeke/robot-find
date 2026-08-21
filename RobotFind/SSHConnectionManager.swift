@@ -168,9 +168,8 @@ final class SSHConnectionManager: ObservableObject {
     }
 }
 
-private final class LocalForwardingHandler: ChannelDuplexHandler {
+private final class LocalForwardingHandler: ChannelInboundHandler {
     typealias InboundIn = ByteBuffer
-    typealias OutboundOut = ByteBuffer
 
     private var peer: Channel?
     private var pending: [ByteBuffer] = []
