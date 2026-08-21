@@ -16,31 +16,46 @@ struct ServerConnectionView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Server address", text: $server)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                        .accessibilityLabel("Server")
-                    TextField("22", text: $sshPort)
-                        .keyboardType(.numberPad)
-                        .accessibilityLabel("SSH port")
+                    LabeledContent("Server") {
+                        TextField("IP address or hostname", text: $server)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityLabel("Server address")
+                    }
+                    LabeledContent("SSH Port") {
+                        TextField("22", text: $sshPort)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityLabel("SSH port")
+                    }
                 } header: {
                     Text("SSH connection")
                 }
 
                 Section {
-                    TextField("Username", text: $username)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .accessibilityLabel("Username")
-                    SecureField("Password", text: $password)
-                        .accessibilityLabel("Password")
+                    LabeledContent("Username") {
+                        TextField("Username", text: $username)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityLabel("Username")
+                    }
+                    LabeledContent("Password") {
+                        SecureField("Required", text: $password)
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityLabel("Password")
+                    }
                 }
 
                 Section {
-                    TextField("8000", text: $qwenAPIPort)
-                        .keyboardType(.numberPad)
-                        .accessibilityLabel("Qwen API port")
+                    LabeledContent("Qwen API Port") {
+                        TextField("8000", text: $qwenAPIPort)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityLabel("Qwen API port")
+                    }
                 } header: {
                     Text("Qwen API")
                 } footer: {
@@ -121,7 +136,7 @@ struct ServerConnectionView: View {
 
     private func connect() {
         guard let sshPort = Int(sshPort), let qwenAPIPort = Int(qwenAPIPort) else {
-            validationMessage = "SSH port and Qwen API port must be numbers."
+            validationMessage = "SSH Port and Qwen API Port must contain numbers only. Enter 141.3.14.47 in Server and 22 in SSH Port."
             return
         }
         let config = ServerConnectionConfig(
