@@ -48,11 +48,11 @@ enum SSHConnectionError: LocalizedError {
         case .authenticationFailed:
             return "Authentication failed. Check the username and password."
         case .networkFailure(let message):
-            return "Could not reach the server. (message)"
+            return "Could not reach the server. \(message)"
         case .forwardingFailed(let message):
-            return "Could not open the API tunnel. (message)"
+            return "Could not open the API tunnel. \(message)"
         case .healthCheckFailed(let message):
-            return "Qwen API is not reachable through the SSH tunnel. (message)"
+            return "Qwen API is not reachable through the SSH tunnel. \(message)"
         case .timedOut:
             return "The server connection timed out."
         }

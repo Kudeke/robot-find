@@ -10,6 +10,7 @@ struct ServerConnectionView: View {
     @State private var password = ""
     @State private var qwenAPIPort = String(ServerConnectionConfig.defaultQwenAPIPort)
     @State private var isWorking = false
+    @State private var validationMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -69,9 +70,16 @@ struct ServerConnectionView: View {
                 }
 
                 Section {
-                    Label(connectionManager.state.label,
-                          systemImage: connectionManager.state == .connected ? "checkmark.circle.fill" : "network")
-                        .foregroundStyle(connectionManager.state == .connected ? .green : FMTTheme.text)
+                    HStack(spacing: 12) {
+                        if isWorking {
+                            ProgressView()
+                        } else {
+                            Image(systemName: connectionManager.state == .connected ? "checkmark.circle.fill" : "network")
+                                .foregroundStyle(connectionManager.state == .connected ? .green : FMTTheme.text)
+                        }
+                        Text(connectionManager.state.label)
+                            .foregroundStyle(connectionManager.state == .connected ? .green : FMTTheme.text)
+                    }
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("Connection status: \(connectionManager.state.label)")
                 }
@@ -92,11 +100,28 @@ struct ServerConnectionView: View {
                     }
                 })
             }
+            .alert("Connection failed", isPresented: Binding(
+                get: { connectionManager.state.isFailed },
+                set: { _ in }
+            )) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(connectionManager.state.label)
+            }
+            .alert("Invalid connection details", isPresented: Binding(
+                get: { validationMessage != nil },
+                set: { if !$0 { validationMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { validationMessage = nil }
+            } message: {
+                Text(validationMessage ?? "Check the connection fields.")
+            }
         }
     }
 
     private func connect() {
         guard let sshPort = Int(sshPort), let qwenAPIPort = Int(qwenAPIPort) else {
+            validationMessage = "SSH port and Qwen API port must be numbers."
             return
         }
         let config = ServerConnectionConfig(
@@ -107,10 +132,17 @@ struct ServerConnectionView: View {
             remoteAPIPort: qwenAPIPort
         )
         isWorking = true
-        Task {
+        Task { @MainActor in
             await connectionManager.connectAndCheckHealth(config: config)
             password = ""
             isWorking = false
         }
+    }
+}
+
+private extension SSHConnectionState {
+    var isFailed: Bool {
+        if case .failed = self { return true }
+        return false
     }
 }
