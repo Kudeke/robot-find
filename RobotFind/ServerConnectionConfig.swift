@@ -7,8 +7,10 @@ struct ServerConnectionConfig {
     var password: String
     var remoteAPIPort: Int
 
+    static let defaultServer = "141.3.14.47"
     static let defaultSSHPort = 22
-    static let defaultQwenAPIPort = 8000
+    static let defaultUsername = "squan"
+    static let defaultQwenAPIPort = 8765
 }
 
 enum SSHConnectionState: Equatable {

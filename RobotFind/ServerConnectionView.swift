@@ -4,9 +4,9 @@ struct ServerConnectionView: View {
     @EnvironmentObject private var connectionManager: SSHConnectionManager
     @Environment(\.dismiss) private var dismiss
 
-    @State private var server = ""
+    @State private var server = ServerConnectionConfig.defaultServer
     @State private var sshPort = String(ServerConnectionConfig.defaultSSHPort)
-    @State private var username = ""
+    @State private var username = ServerConnectionConfig.defaultUsername
     @State private var password = ""
     @State private var qwenAPIPort = String(ServerConnectionConfig.defaultQwenAPIPort)
     @State private var isWorking = false
@@ -25,7 +25,7 @@ struct ServerConnectionView: View {
                             .accessibilityLabel("Server address")
                     }
                     LabeledContent("SSH Port") {
-                        TextField("22", text: $sshPort)
+                        TextField(String(ServerConnectionConfig.defaultSSHPort), text: $sshPort)
                             .keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
                             .accessibilityLabel("SSH port")
@@ -51,7 +51,7 @@ struct ServerConnectionView: View {
 
                 Section {
                     LabeledContent("Qwen API Port") {
-                        TextField("8000", text: $qwenAPIPort)
+                        TextField(String(ServerConnectionConfig.defaultQwenAPIPort), text: $qwenAPIPort)
                             .keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
                             .accessibilityLabel("Qwen API port")
