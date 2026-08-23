@@ -3,7 +3,7 @@ set -euo pipefail
 
 SERVER_USER="${UNINAVID_SERVER_USER:-squan}"
 SERVER_HOST="${UNINAVID_SERVER_HOST:-i14s42}"
-SERVER_PATH="/cvhci/temp/squan/uninavid/"
+SERVER_PATH="/cvhci/temp/squan/robotfind_uninavid/"
 REMOTE_TARGET="${SERVER_USER}@${SERVER_HOST}:${SERVER_PATH}"
 
 APPLY=0
