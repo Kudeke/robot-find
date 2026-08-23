@@ -80,6 +80,14 @@ final class ServerAPI {
             do {
                 profile = try ObjectProfile.decoder().decode(ObjectProfile.self, from: data)
             } catch {
+                #if DEBUG
+                print("[ObjectUpload] ObjectProfile decode failed: \(String(reflecting: error))")
+                if let rawBody = String(data: data, encoding: .utf8) {
+                    print("[ObjectUpload] raw response body: \(rawBody)")
+                } else {
+                    print("[ObjectUpload] raw response body (base64): \(data.base64EncodedString())")
+                }
+                #endif
                 throw ServerAPIError.invalidProfile("The response was not valid ObjectProfile JSON.")
             }
             try validate(profile)
