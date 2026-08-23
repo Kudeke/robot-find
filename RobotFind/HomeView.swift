@@ -55,18 +55,13 @@ struct FMTItem: Identifiable, Hashable, Codable {
 // MARK: - Home screen
 
 struct HomeView: View {
-    @State private var items: [FMTItem] = {
-        if let data = UserDefaults.standard.data(forKey: "fmt.items"),
-           let saved = try? JSONDecoder().decode([FMTItem].self, from: data) {
-            return saved
-        }
-        return FMTItem.seed
-    }()
+    @State private var items: [FMTItem] = FMTItemStore.load()
     @State private var path = NavigationPath()
     @State private var showSettings = false
     @State private var showLibrary  = false
     @State private var showTeach    = false
     @State private var showPicker   = false
+    @State private var persistenceError: String?
 
     // Driving fullScreenCover(item:) — guaranteed non-nil inside the cover closures
     @State private var scanningItem: FMTItem? = nil
@@ -144,8 +139,11 @@ struct HomeView: View {
             }
             .background(FMTTheme.background)
             .onChange(of: items) { _, newItems in
-                if let data = try? JSONEncoder().encode(newItems) {
-                    UserDefaults.standard.set(data, forKey: "fmt.items")
+                do {
+                    try FMTItemStore.save(newItems)
+                } catch {
+                    persistenceError = "The item could not be saved on this device."
+                    print("[ItemStore] save failed: \(String(reflecting: error))")
                 }
             }
             .navigationDestination(for: FMTItem.self) { item in
@@ -191,7 +189,6 @@ struct HomeView: View {
             TeachWizardView(
                 onCancel: { showTeach = false },
                 onComplete: { result in
-                    showTeach = false
                     let newItem = FMTItem(
                         id: result.itemID,
                         name: result.name,
@@ -203,11 +200,24 @@ struct HomeView: View {
                         clips: 4,
                         objectProfile: result.objectProfile
                     )
-                    items.append(newItem)
-                    if result.tryFind {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            scanningItem = newItem
+                    var updatedItems = items
+                    if let index = updatedItems.firstIndex(where: { $0.id == newItem.id }) {
+                        updatedItems[index] = newItem
+                    } else {
+                        updatedItems.append(newItem)
+                    }
+                    do {
+                        try FMTItemStore.save(updatedItems)
+                        items = updatedItems
+                        showTeach = false
+                        if result.tryFind {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                scanningItem = newItem
+                            }
                         }
+                    } catch {
+                        persistenceError = "The item was analyzed, but could not be saved on this device."
+                        print("[ItemStore] save failed after profile: \(String(reflecting: error))")
                     }
                 }
             )
@@ -249,6 +259,14 @@ struct HomeView: View {
                 onDone: { foundItem = nil }
             )
             .fmtAdaptiveAccent()
+        }
+        .alert("Item not saved", isPresented: Binding(
+            get: { persistenceError != nil },
+            set: { if !$0 { persistenceError = nil } }
+        )) {
+            Button("OK", role: .cancel) { persistenceError = nil }
+        } message: {
+            Text(persistenceError ?? "The item could not be saved on this device.")
         }
     }
 

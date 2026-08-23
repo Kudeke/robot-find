@@ -23,6 +23,9 @@ struct ObjectProfile: Codable, Hashable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
+            if let timestamp = try? container.decode(Double.self) {
+                return Date(timeIntervalSinceReferenceDate: timestamp)
+            }
             let value = try container.decode(String.self)
             guard let date = parseISO8601(value) else {
                 throw DecodingError.dataCorruptedError(

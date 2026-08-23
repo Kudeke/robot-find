@@ -60,6 +60,7 @@ struct ItemDetailView: View {
                 subtitleRow
                 captureStatusCard
                 guidedViewsSection
+                serverProfileSection
                 actionButtons
             }
             .padding(.bottom, 40)
@@ -180,6 +181,56 @@ struct ItemDetailView: View {
             .accessibilityHint("Deletes this item. You have 3 seconds to undo.")
         }
         .padding(FMTTheme.Spacing.xl)
+    }
+
+    // MARK: - Developer ObjectProfile inspection
+
+    private var serverProfileSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("SERVER PROFILE")
+                .font(.system(size: 13, weight: .semibold))
+                .kerning(0.5)
+                .foregroundStyle(FMTTheme.textSecondary)
+                .accessibilityAddTraits(.isHeader)
+
+            if let profile = item.objectProfile {
+                profileField("Object ID", value: profile.objectID)
+                profileField("Category", value: profile.category)
+                profileField("Visual Description", value: profile.visualDescription)
+                profileField(
+                    "Distinctive Features",
+                    value: profile.distinctiveFeatures.isEmpty
+                        ? "None returned"
+                        : profile.distinctiveFeatures.map { "• \($0)" }.joined(separator: "\n")
+                )
+                profileField("Navigation Description", value: profile.navigationDescription)
+            } else {
+                Text("No server ObjectProfile")
+                    .font(.system(size: 17))
+                    .foregroundStyle(FMTTheme.textSecondary)
+                    .accessibilityLabel("No server ObjectProfile available")
+            }
+        }
+        .padding(FMTTheme.Spacing.xl)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(FMTTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: FMTTheme.Radius.card))
+        .padding(.horizontal, FMTTheme.Spacing.xl)
+        .padding(.top, 24)
+    }
+
+    private func profileField(_ label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(FMTTheme.textSecondary)
+            Text(value)
+                .font(.system(size: 17))
+                .foregroundStyle(FMTTheme.text)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(value)")
     }
 
     // MARK: - Undo toast

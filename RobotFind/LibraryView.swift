@@ -9,6 +9,7 @@ struct LibraryView: View {
     @State private var query = ""
     @State private var path = NavigationPath()
     @State private var showTeach = false
+    @State private var persistenceError: String?
     @FocusState private var searchFocused: Bool
 
     private var filtered: [FMTItem] {
@@ -55,6 +56,14 @@ struct LibraryView: View {
             )
         }
         .fullScreenCover(isPresented: $showTeach) { teachSheet }
+        .alert("Item not saved", isPresented: Binding(
+            get: { persistenceError != nil },
+            set: { if !$0 { persistenceError = nil } }
+        )) {
+            Button("OK", role: .cancel) { persistenceError = nil }
+        } message: {
+            Text(persistenceError ?? "The item could not be saved on this device.")
+        }
     }
 
     // MARK: - Teach sheet
@@ -62,7 +71,6 @@ struct LibraryView: View {
         TeachWizardView(
             onCancel: { showTeach = false },
             onComplete: { result in
-                showTeach = false
                 let newItem = FMTItem(
                     id: result.itemID,
                     name: result.name,
@@ -74,7 +82,20 @@ struct LibraryView: View {
                     clips: 4,
                     objectProfile: result.objectProfile
                 )
-                items.append(newItem)
+                var updatedItems = items
+                if let index = updatedItems.firstIndex(where: { $0.id == newItem.id }) {
+                    updatedItems[index] = newItem
+                } else {
+                    updatedItems.append(newItem)
+                }
+                do {
+                    try FMTItemStore.save(updatedItems)
+                    items = updatedItems
+                    showTeach = false
+                } catch {
+                    persistenceError = "The item was analyzed, but could not be saved on this device."
+                    print("[ItemStore] save failed after profile: \(String(reflecting: error))")
+                }
             }
         )
     }
