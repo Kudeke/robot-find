@@ -49,10 +49,12 @@ struct ItemDetailView: View {
     let item: FMTItem
     var onDelete: (String) -> Void = { _ in }
 
+    @EnvironmentObject private var connectionManager: SSHConnectionManager
     @Environment(\.dismiss) private var dismiss
 
     @State private var showUndoToast = false
     @State private var pendingDeleteTask: Task<Void, Never>?
+    @State private var showMission = false
 
     var body: some View {
         ScrollView {
@@ -77,6 +79,11 @@ struct ItemDetailView: View {
                 notification: .screenChanged,
                 argument: "\(item.name). \(item.confidence.accessibilityLabel)."
             )
+        }
+        .sheet(isPresented: $showMission) {
+            RobotMissionView(item: item)
+                .environmentObject(connectionManager)
+                .fmtAdaptiveAccent()
         }
     }
 
@@ -155,10 +162,21 @@ struct ItemDetailView: View {
                 systemImage: "magnifyingglass",
                 style: .primary
             ) {
-                // TODO: push to Scanning screen
+                showMission = true
             }
+            .disabled(!canStartMission)
+            .opacity(canStartMission ? 1 : 0.5)
             .accessibilityLabel("Find this item")
-            .accessibilityHint("Starts scanning for \(item.name)")
+            .accessibilityHint(canStartMission ? "Starts a robot search for \(item.name)" : findDisabledReason)
+
+            if !canStartMission {
+                Text(findDisabledReason)
+                    .font(.system(size: 15))
+                    .foregroundStyle(FMTTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityLabel(findDisabledReason)
+            }
 
             FMTBigButton(
                 title: "Capture more views",
@@ -181,6 +199,17 @@ struct ItemDetailView: View {
             .accessibilityHint("Deletes this item. You have 3 seconds to undo.")
         }
         .padding(FMTTheme.Spacing.xl)
+    }
+
+    private var canStartMission: Bool {
+        item.objectProfile?.objectID.isEmpty == false && connectionManager.state == .connected
+    }
+
+    private var findDisabledReason: String {
+        if item.objectProfile?.objectID.isEmpty != false {
+            return "Teach this item before searching."
+        }
+        return "Connect to the server before starting a search."
     }
 
     // MARK: - Developer ObjectProfile inspection
@@ -366,4 +395,5 @@ private struct GuidedViewThumb: View {
     NavigationStack {
         ItemDetailView(item: FMTItem.seed[0])
     }
+    .environmentObject(SSHConnectionManager())
 }

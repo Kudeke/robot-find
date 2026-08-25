@@ -7,6 +7,11 @@ enum ServerAPIError: LocalizedError {
     case httpStatus(Int)
     case invalidProfile(String)
     case requestFailed(String)
+    case missionAlreadyActive
+    case missionObjectNotFound
+    case missionInvalid
+    case missionUnavailable
+    case invalidMissionResponse
 
     var errorDescription: String? {
         switch self {
@@ -22,6 +27,16 @@ enum ServerAPIError: LocalizedError {
             return "The server returned an incomplete item profile: \(reason)"
         case .requestFailed(let reason):
             return "The server could not analyze this item. \(reason)"
+        case .missionAlreadyActive:
+            return "Another robot search is already active."
+        case .missionObjectNotFound:
+            return "This item is not available on the server."
+        case .missionInvalid:
+            return "This item cannot be used for a robot search."
+        case .missionUnavailable:
+            return "The robot search service is unavailable."
+        case .invalidMissionResponse:
+            return "The server returned an invalid robot mission."
         }
     }
 }
@@ -104,6 +119,29 @@ final class ServerAPI {
         }
     }
 
+    func createMission(objectID: String) async throws -> Mission {
+        let endpoint = baseURL.appendingPathComponent("api/v1/missions")
+        let body = try JSONSerialization.data(withJSONObject: ["object_id": objectID])
+        print("[Mission] create request")
+        return try await missionRequest(url: endpoint, method: "POST", body: body)
+    }
+
+    func startMission(missionID: String) async throws -> Mission {
+        let endpoint = baseURL
+            .appendingPathComponent("api/v1/missions")
+            .appendingPathComponent(missionID)
+            .appendingPathComponent("start")
+        print("[Mission] start request mission_id=\(missionID)")
+        return try await missionRequest(url: endpoint, method: "POST")
+    }
+
+    func getMission(missionID: String) async throws -> Mission {
+        let endpoint = baseURL
+            .appendingPathComponent("api/v1/missions")
+            .appendingPathComponent(missionID)
+        return try await missionRequest(url: endpoint, method: "GET")
+    }
+
     private func validate(_ profile: ObjectProfile) throws {
         guard !profile.objectID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ServerAPIError.invalidProfile("object_id is empty.")
@@ -119,6 +157,49 @@ final class ServerAPI {
         }
         guard !profile.navigationDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ServerAPIError.invalidProfile("navigation_description is empty.")
+        }
+    }
+
+    private func missionRequest(url: URL, method: String, body: Data? = nil) async throws -> Mission {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw ServerAPIError.invalidMissionResponse
+            }
+            guard (200...299).contains(httpResponse.statusCode) else {
+                switch httpResponse.statusCode {
+                case 404: throw ServerAPIError.missionObjectNotFound
+                case 409: throw ServerAPIError.missionAlreadyActive
+                case 422: throw ServerAPIError.missionInvalid
+                case 500...599: throw ServerAPIError.missionUnavailable
+                default: throw ServerAPIError.httpStatus(httpResponse.statusCode)
+                }
+            }
+
+            do {
+                return try ObjectProfile.decoder().decode(Mission.self, from: data)
+            } catch {
+                #if DEBUG
+                print("[Mission] decode failed: \(String(reflecting: error))")
+                if let rawBody = String(data: data, encoding: .utf8) {
+                    print("[Mission] raw response body: \(rawBody)")
+                }
+                #endif
+                throw ServerAPIError.invalidMissionResponse
+            }
+        } catch let error as ServerAPIError {
+            throw error
+        } catch {
+            throw ServerAPIError.requestFailed(error.localizedDescription)
         }
     }
 
