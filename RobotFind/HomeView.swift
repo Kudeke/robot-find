@@ -223,20 +223,9 @@ struct HomeView: View {
             )
             .fmtAdaptiveAccent()
         }
-        // Single scanning cover driven by optional item
+        // Mission cover driven by the selected taught item
         .fullScreenCover(item: $scanningItem) { item in
-            ScanningView(
-                item: item,
-                onFound: {
-                    // Capture before nil-ing
-                    let found = scanningItem
-                    scanningItem = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        foundItem = found
-                    }
-                },
-                onCancel: { scanningItem = nil }
-            )
+            RobotMissionView(item: item)
             .fmtAdaptiveAccent()
         }
         // Single found cover driven by optional item
