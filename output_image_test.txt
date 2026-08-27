@@ -1,0 +1,39 @@
+Model:
+/cvhci/temp/squan/models/Qwen3-VL-8B-Instruct
+
+Image:
+/cvhci/temp/squan/qwen_object_service/samples/object.jpg
+
+Prompt:
+Analyze the main physical object in this image.
+
+Describe only visually observable characteristics that would help recognize the exact same physical object later.
+
+Include:
+- object category
+- primary and secondary colors
+- shape
+- material or surface appearance
+- distinctive parts
+- markings, stickers, logos, or visible text
+- unusual visual characteristics
+
+Ignore the background unless it is necessary to understand the object.
+
+Return a concise object description.
+
+Result:
+Object category: Large black equipment case
+
+Primary color: Black
+Secondary color: White (on wheels and handles)
+
+Shape: Rectangular, tall and narrow
+
+Material or surface appearance: Matte black hard-shell exterior, likely reinforced plastic or composite
+
+Distinctive parts: White caster wheels, white retractable handles, white protective corner guards
+
+Markings, stickers, logos, or visible text: White text/logos on side panels, including “SOUND” and “TECH” in stylized font
+
+Unusual visual characteristics: The case is positioned upright on wheels, with a white folding chair placed in front of it, suggesting a staging or setup context.

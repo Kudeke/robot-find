@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.py[cod]
+tmp*/
+*.log
+*.pid
+
+
+.mamba_env/
+.mamba_env_*/
+data/
+samples/

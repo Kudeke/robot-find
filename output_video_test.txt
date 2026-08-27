@@ -1,0 +1,7 @@
+Video: /cvhci/temp/squan/qwen_object_service/samples/testvideo1.mp4
+Duration: approximately 5.0 seconds
+Inference time: 54.7 seconds
+Peak torch allocated VRAM: approximately 17.27 GiB
+
+Result:
+A white ergonomic mouse with a curved, contoured shape. It has two silver-colored scroll wheels on the side, and the brand name "inphic" is visible in gray text on the top surface. The mouse has a smooth, matte finish.

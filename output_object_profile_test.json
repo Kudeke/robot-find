@@ -1,0 +1,25 @@
+{
+  "inference_seconds": 203.9,
+  "peak_gib": 17.27,
+  "profile": {
+    "category": "computer mouse",
+    "visual_description": "white ergonomic mouse with curved contoured shape, matte finish, two side buttons, central scroll wheel, and brand name 'inphic' printed on top",
+    "distinctive_features": [
+      "white color",
+      "matte finish",
+      "curved teardrop-like shape",
+      "two side buttons",
+      "central scroll wheel",
+      "brand name 'inphic' printed in black on top",
+      "ribbed textured grip area on underside"
+    ],
+    "navigation_description": "white ergonomic mouse with 'inphic' logo and ribbed grip"
+  },
+  "clip_descriptions": [
+    "A white ergonomic mouse with a curved, contoured shape. It has two silver scroll wheels on the side, a smooth matte finish, and the brand name \"inphic\" printed in small gray letters on the top. The mouse has a slightly tapered base and a rounded top surface.",
+    "A white, teardrop-shaped humidifier with a smooth, matte surface. It has a slightly tapered top and a rounded base. A small, dark logo is visible near the top. The object is positioned upright on a flat surface.",
+    "A white ergonomic mouse with a curved, contoured shape. It has a textured surface with vertical ridges on the side. The top features two rectangular buttons and a central scroll wheel. The front has a rectangular button with a square icon. The brand name \"inphic\" is printed in black on the top surface. The mouse has a smooth, matte finish.",
+    "A white ergonomic computer mouse with a curved, teardrop-like shape. It has a glossy finish and features a prominent \"inphic\" logo on the top surface. The mouse has a ribbed, textured grip area on the underside and visible scroll wheel and side buttons. The overall design is sleek and modern, with a smooth, rounded body."
+  ],
+  "raw_profile_output": "{\n  \"category\": \"computer mouse\",\n  \"visual_description\": \"white ergonomic mouse with curved contoured shape, matte finish, two side buttons, central scroll wheel, and brand name 'inphic' printed on top\",\n  \"distinctive_features\": [\n    \"white color\",\n    \"matte finish\",\n    \"curved teardrop-like shape\",\n    \"two side buttons\",\n    \"central scroll wheel\",\n    \"brand name 'inphic' printed in black on top\",\n    \"ribbed textured grip area on underside\"\n  ],\n  \"navigation_description\": \"white ergonomic mouse with 'inphic' logo and ribbed grip\"\n}"
+}
