@@ -20,6 +20,7 @@ ACTION_TOPIC = "/vln/uninavid/actions"
 VALID_ACTIONS = {"forward", "left", "right", "stop"}
 MISSION_POLL_SEC = 1.0
 MISSION_API_FAILURE_LIMIT_SEC = 5.0
+STOP_COMPLETION_THRESHOLD = 3
 
 
 def stamp_to_ns(stamp: Any) -> int:
@@ -62,6 +63,7 @@ class UniNaVidClientNode(Node):
         self.active_mission: ActiveMission | None = None
         self.mission_terminal: str | None = None
         self.mission_terminal_error = ""
+        self.consecutive_stop_inferences = 0
         self.runtime_active = threading.Event()
         self.api_unavailable_since: float | None = None
         self.api_failure_logged = False
@@ -190,6 +192,8 @@ class UniNaVidClientNode(Node):
 
     async def _infer(self, frame_seq: int, timestamp_ns: int, jpeg: bytes) -> None:
         try:
+            if self.mission_mode and not self.runtime_active.is_set():
+                return
             websocket = self.websocket
             if websocket is None:
                 raise RuntimeError("not connected")
@@ -200,10 +204,13 @@ class UniNaVidClientNode(Node):
             response = json.loads(await asyncio.wait_for(websocket.recv(), timeout=120.0))
             if response.get("type") != "inference_result":
                 raise RuntimeError(f"unexpected inference response: {response}")
-            actions = self._sanitize_actions(response.get("actions", []))
+            raw_actions = response.get("actions", [])
+            actions = self._sanitize_actions(raw_actions)
             result_frame_seq = int(response.get("frame_seq", frame_seq))
             print(f"[VLN] result frame_seq={result_frame_seq} actions={actions} "
                   f"inference_ms={float(response.get('inference_ms', 0.0)):.1f}", flush=True)
+            if self.mission_mode:
+                self._record_inference_result(raw_actions)
             if not self.mission_mode or self.runtime_active.is_set():
                 self._publish_actions({"frame_seq": result_frame_seq, "actions": actions,
                                        "raw_output": str(response.get("raw_output", "")),
@@ -222,6 +229,32 @@ class UniNaVidClientNode(Node):
             return ["stop"]
         cleaned = [str(action).lower() for action in actions if str(action).lower() in VALID_ACTIONS]
         return cleaned or ["stop"]
+
+    def _record_inference_result(self, raw_actions: Any) -> None:
+        """Count complete inference responses, not individual stop actions."""
+        if not isinstance(raw_actions, list) or not raw_actions:
+            all_stop = False
+        else:
+            all_stop = all(action == "stop" for action in raw_actions)
+
+        with self.mission_lock:
+            if self.active_mission is None or self.mission_terminal is not None:
+                return
+            previous = self.consecutive_stop_inferences
+            if all_stop:
+                self.consecutive_stop_inferences += 1
+                count = self.consecutive_stop_inferences
+            else:
+                self.consecutive_stop_inferences = 0
+                count = 0
+
+        if all_stop:
+            print(f"[Mission] stop inference count={count}/{STOP_COMPLETION_THRESHOLD}", flush=True)
+            if count >= STOP_COMPLETION_THRESHOLD:
+                if self._begin_terminal("completed", "three consecutive stop inferences"):
+                    print("[Mission] completion detected", flush=True)
+        elif previous:
+            print("[Mission] stop inference counter reset", flush=True)
 
     def _publish_actions(self, payload: dict[str, Any]) -> None:
         if self.stop_requested.is_set() or not rclpy.ok():
@@ -312,6 +345,8 @@ class UniNaVidClientNode(Node):
             if self.active_mission is None or self.mission_terminal is not None:
                 return
             self.mission_terminal, self.mission_terminal_error = outcome, error
+            if outcome != "completed":
+                self.consecutive_stop_inferences = 0
         self.runtime_active.clear()
         self.mission_stop.set()
         self.connected.clear()
@@ -326,7 +361,10 @@ class UniNaVidClientNode(Node):
         if mission is None or outcome is None or not self.session_closed.is_set():
             return
         try:
-            if outcome == "stopped":
+            if outcome == "completed":
+                state = self.mission_api.ack_runtime_completed(mission.mission_id)
+                print(f"[Mission] runtime-completed acknowledged state={state or 'unknown'}", flush=True)
+            elif outcome == "stopped":
                 self.mission_api.ack_runtime_stopped(mission.mission_id)
                 print("[Mission] runtime-stopped acknowledged", flush=True)
             else:
@@ -339,6 +377,7 @@ class UniNaVidClientNode(Node):
             self.active_mission = None
             self.mission_terminal = None
             self.mission_terminal_error = ""
+            self.consecutive_stop_inferences = 0
         self.mission_stop.clear()
         self.runtime_active.clear()
         print("[Mission] back to idle", flush=True)

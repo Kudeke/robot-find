@@ -41,6 +41,16 @@ class MissionApiClient:
     def ack_runtime_stopped(self, mission_id: str) -> None:
         self._request("POST", f"/api/v1/missions/{mission_id}/runtime-stopped")
 
+    def ack_runtime_completed(self, mission_id: str) -> str | None:
+        response = self._request("POST", f"/api/v1/missions/{mission_id}/runtime-completed")
+        if not isinstance(response, dict):
+            return None
+        mission = response.get("mission")
+        if isinstance(mission, dict):
+            response = mission
+        state = response.get("state")
+        return str(state).strip().lower() if state is not None else None
+
     def report_runtime_failed(self, mission_id: str, error: str) -> None:
         self._request("POST", f"/api/v1/missions/{mission_id}/runtime-failed", {"error": error[:500]})
 
