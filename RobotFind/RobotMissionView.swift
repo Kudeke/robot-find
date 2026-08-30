@@ -5,6 +5,11 @@ final class RobotMissionViewModel: ObservableObject {
     @Published private(set) var currentMission: Mission?
     @Published private(set) var isStarting = false
     @Published var errorMessage: String?
+    private var pollingTask: Task<Void, Never>?
+
+    deinit {
+        pollingTask?.cancel()
+    }
 
     func createAndStart(item: FMTItem, connectionManager: SSHConnectionManager) async {
         guard let objectID = item.objectProfile?.objectID, !objectID.isEmpty else {
@@ -31,11 +36,62 @@ final class RobotMissionViewModel: ObservableObject {
             let started = try await api.startMission(missionID: created.missionID)
             currentMission = started
             print("[Mission] started state=\(started.state.rawValue)")
+            startPolling(connectionManager: connectionManager)
         } catch {
             errorMessage = error.localizedDescription
             print("[Mission] failed: \(String(reflecting: error))")
         }
         isStarting = false
+    }
+
+    func stopPolling() {
+        pollingTask?.cancel()
+        pollingTask = nil
+    }
+
+    private func startPolling(connectionManager: SSHConnectionManager) {
+        guard pollingTask == nil,
+              let missionID = currentMission?.missionID,
+              currentMission?.state.isTerminal == false else { return }
+
+        pollingTask = Task { @MainActor [weak self, weak connectionManager] in
+            var consecutiveFailures = 0
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                    guard let self,
+                          let connectionManager,
+                          let baseURL = connectionManager.localBaseURL else {
+                        consecutiveFailures += 1
+                        if consecutiveFailures >= 3 {
+                            self?.errorMessage = "Connection lost. Reconnect to the server."
+                        }
+                        continue
+                    }
+
+                    let mission = try await ServerAPI(baseURL: baseURL).getMission(missionID: missionID)
+                    consecutiveFailures = 0
+                    if self.errorMessage == "Connection lost. Reconnect to the server." {
+                        self.errorMessage = nil
+                    }
+                    self.currentMission = mission
+                    print("[Mission] poll mission_id=\(missionID) state=\(mission.state.rawValue)")
+
+                    if mission.state.isTerminal {
+                        print("[Mission] polling stopped terminal=\(mission.state.rawValue)")
+                        self.stopPolling()
+                    }
+                } catch is CancellationError {
+                    break
+                } catch {
+                    consecutiveFailures += 1
+                    print("[Mission] poll failed (attempt \(consecutiveFailures)): \(error.localizedDescription)")
+                    if consecutiveFailures >= 3 {
+                        self?.errorMessage = "Could not refresh robot search status. Check the server connection."
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -51,9 +107,9 @@ struct RobotMissionView: View {
             VStack(spacing: 24) {
                 Spacer()
 
-                Image(systemName: viewModel.currentMission?.state == .failed ? "exclamationmark.triangle" : "figure.walk")
+                Image(systemName: missionIcon)
                     .font(.system(size: 64, weight: .semibold))
-                    .foregroundStyle(viewModel.currentMission?.state == .failed ? FMTTheme.error : FMTTheme.accent)
+                    .foregroundStyle(missionColor)
                     .accessibilityHidden(true)
 
                 VStack(spacing: 10) {
@@ -127,17 +183,40 @@ struct RobotMissionView: View {
             .task {
                 await viewModel.createAndStart(item: item, connectionManager: connectionManager)
             }
+            .onDisappear {
+                viewModel.stopPolling()
+            }
         }
     }
 
     private func missionStateText(_ state: MissionState) -> String {
         switch state {
-        case .ready: return "Mission ready"
-        case .starting: return "Starting robot search..."
-        case .running: return "Robot search running"
-        case .stopping: return "Stopping robot search..."
-        case .stopped: return "Robot search stopped"
-        case .failed: return "Robot search failed"
+        case .ready, .starting, .running: return "Searching..."
+        case .stopping, .stopped: return "Stopped"
+        case .failed: return "Search failed"
+        case .targetFound: return "Found"
+        }
+    }
+
+    private var missionIcon: String {
+        switch viewModel.currentMission?.state {
+        case .targetFound:
+            return "checkmark.circle.fill"
+        case .failed:
+            return "exclamationmark.triangle"
+        default:
+            return "figure.walk"
+        }
+    }
+
+    private var missionColor: Color {
+        switch viewModel.currentMission?.state {
+        case .targetFound:
+            return FMTTheme.success
+        case .failed:
+            return FMTTheme.error
+        default:
+            return FMTTheme.accent
         }
     }
 }

@@ -7,6 +7,16 @@ enum MissionState: String, Codable, Hashable {
     case stopping
     case stopped
     case failed
+    case targetFound = "target_found"
+
+    var isTerminal: Bool {
+        switch self {
+        case .targetFound, .stopped, .failed:
+            return true
+        case .ready, .starting, .running, .stopping:
+            return false
+        }
+    }
 }
 
 struct Mission: Codable, Identifiable, Hashable {

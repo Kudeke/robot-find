@@ -7,6 +7,7 @@ enum ServerAPIError: LocalizedError {
     case httpStatus(Int)
     case invalidProfile(String)
     case requestFailed(String)
+    case analysisTimedOut
     case missionAlreadyActive
     case missionObjectNotFound
     case missionInvalid
@@ -27,6 +28,8 @@ enum ServerAPIError: LocalizedError {
             return "The server returned an incomplete item profile: \(reason)"
         case .requestFailed(let reason):
             return "The server could not analyze this item. \(reason)"
+        case .analysisTimedOut:
+            return "The analysis request timed out. The server may still be processing the item. Your videos were kept locally; wait before retrying."
         case .missionAlreadyActive:
             return "Another robot search is already active."
         case .missionObjectNotFound:
@@ -44,7 +47,7 @@ enum ServerAPIError: LocalizedError {
 final class ServerAPI {
     private let baseURL: URL
     private let session: URLSession
-    private let requestTimeout: TimeInterval = 300
+    private let requestTimeout: TimeInterval = 600
 
     init(baseURL: URL, session: URLSession = .shared) {
         self.baseURL = baseURL
@@ -80,6 +83,7 @@ final class ServerAPI {
             print("[ObjectUpload] \(url.lastPathComponent) size=\(size)")
         }
         print("[ObjectUpload] request start")
+        print("[ObjectUpload] timeout=\(Int(requestTimeout))s")
 
         do {
             let (data, response) = try await session.upload(for: request, from: body)
@@ -114,6 +118,10 @@ final class ServerAPI {
             print("[ObjectUpload] failed: \(error.localizedDescription)")
             throw error
         } catch {
+            if let urlError = error as? URLError, urlError.code == .timedOut {
+                print("[ObjectUpload] timed out after \(Int(requestTimeout))s; server may still be processing")
+                throw ServerAPIError.analysisTimedOut
+            }
             print("[ObjectUpload] failed: \(error.localizedDescription)")
             throw ServerAPIError.requestFailed(error.localizedDescription)
         }

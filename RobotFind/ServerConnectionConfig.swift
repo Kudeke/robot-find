@@ -41,6 +41,7 @@ enum SSHConnectionError: LocalizedError {
     case networkFailure(String)
     case forwardingFailed(String)
     case healthCheckFailed(String)
+    case connectionLost
     case timedOut
 
     var errorDescription: String? {
@@ -55,6 +56,8 @@ enum SSHConnectionError: LocalizedError {
             return "Could not open the API tunnel. \(message)"
         case .healthCheckFailed(let message):
             return "Qwen API is not reachable through the SSH tunnel. \(message)"
+        case .connectionLost:
+            return "The SSH connection was lost. Reconnect to the server."
         case .timedOut:
             return "The server connection timed out."
         }

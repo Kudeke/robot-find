@@ -958,8 +958,8 @@ struct TeachWizardView: View {
                     print("[TeachVideo] finalized \(clip.url.lastPathComponent) duration=\(clip.duration) size=\(clip.fileSize)")
                 }
 
-                guard connectionManager.state == .connected,
-                      let baseURL = connectionManager.localBaseURL else {
+                try await connectionManager.revalidateConnection()
+                guard let baseURL = connectionManager.localBaseURL else {
                     throw ServerAPIError.disconnected
                 }
 

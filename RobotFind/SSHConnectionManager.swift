@@ -13,8 +13,13 @@ final class SSHConnectionManager: ObservableObject {
     private var eventLoopGroup: MultiThreadedEventLoopGroup?
     private var forwardingChannels: [Channel] = []
     private let healthClient = ServerHealthClient()
+    private var activeConnectionID: UUID?
+    private var isDisconnecting = false
 
     func connectAndCheckHealth(config: ServerConnectionConfig) async {
+        isDisconnecting = false
+        let connectionID = UUID()
+        activeConnectionID = connectionID
         await MainActor.run { self.state = .connecting }
         do {
             try validate(config)
@@ -23,8 +28,14 @@ final class SSHConnectionManager: ObservableObject {
                 try await self.connectSSH(config: config)
             }
             sshClient = client
+            client.onDisconnect { [weak self] in
+                print("[SSH] session disconnected")
+                Task { [weak self] in
+                    await self?.handleTransportLoss(connectionID: connectionID, reason: "SSH session closed")
+                }
+            }
             await MainActor.run { self.state = .forwarding }
-            let baseURL = try await startLocalForwarding(client: client, config: config)
+            let baseURL = try await startLocalForwarding(client: client, config: config, connectionID: connectionID)
             localBaseURL = baseURL
             await MainActor.run { self.state = .checkingHealth }
             _ = try await withTimeout(seconds: 15) {
@@ -40,6 +51,8 @@ final class SSHConnectionManager: ObservableObject {
     }
 
     func disconnect() async {
+        isDisconnecting = true
+        activeConnectionID = nil
         localBaseURL = nil
         for channel in forwardingChannels {
             try? await channel.close()
@@ -54,6 +67,26 @@ final class SSHConnectionManager: ObservableObject {
         }
         self.eventLoopGroup = nil
         await MainActor.run { self.state = .disconnected }
+        isDisconnecting = false
+    }
+
+    /// Rechecks the existing loopback tunnel before a long-running API request.
+    /// This never creates a second SSH session or forwarding listener.
+    func revalidateConnection() async throws {
+        guard state == .connected, let baseURL = localBaseURL else {
+            throw SSHConnectionError.connectionLost
+        }
+
+        do {
+            _ = try await withTimeout(seconds: 15) {
+                try await self.healthClient.check(baseURL: baseURL)
+            }
+            print("[Health] pre-upload check PASS")
+        } catch {
+            print("[Health] pre-upload check failed: \(error.localizedDescription)")
+            await handleTransportLoss(connectionID: activeConnectionID, reason: "Health check failed")
+            throw SSHConnectionError.connectionLost
+        }
     }
 
     private func connectSSH(config: ServerConnectionConfig) async throws -> SSHClient {
@@ -77,14 +110,21 @@ final class SSHConnectionManager: ObservableObject {
         }
     }
 
-    private func startLocalForwarding(client: SSHClient, config: ServerConnectionConfig) async throws -> URL {
+    private func startLocalForwarding(client: SSHClient, config: ServerConnectionConfig, connectionID: UUID) async throws -> URL {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         eventLoopGroup = group
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.backlog, value: 16)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { localChannel in
-                let localHandler = LocalForwardingHandler()
+                let requestID = String(UUID().uuidString.prefix(8))
+                print("[SSH] accepted local connection #\(requestID)")
+                let localHandler = LocalForwardingHandler(label: "local #\(requestID)", onInactive: { [weak self] in
+                    print("[SSH] local HTTP connection closed #\(requestID)")
+                    if self?.localListener?.isActive == true {
+                        print("[SSH] listener still active")
+                    }
+                })
                 let promise = localChannel.eventLoop.makePromise(of: Void.self)
                 localChannel.pipeline.addHandler(localHandler).whenComplete { result in
                     guard case .success = result else {
@@ -106,7 +146,8 @@ final class SSHConnectionManager: ObservableObject {
                                     originatorAddress: originator
                                 )
                             ) { proxyChannel in
-                                let handler = LocalForwardingHandler()
+                                print("[SSH] opening direct-tcpip channel #\(requestID)")
+                                let handler = LocalForwardingHandler(label: "direct #\(requestID)")
                                 remoteHandler = handler
                                 return proxyChannel.pipeline.addHandler(handler)
                             }
@@ -116,10 +157,13 @@ final class SSHConnectionManager: ObservableObject {
                             localHandler.setPeer(remoteChannel)
                             remoteHandler.setPeer(localChannel)
                             self.forwardingChannels.append(remoteChannel)
+                            print("[SSH] direct-tcpip channel opened #\(requestID)")
                             promise.succeed(())
                         } catch {
+                            print("[SSH] direct-tcpip channel failed #\(requestID): \(error.localizedDescription)")
                             promise.fail(error)
                             localChannel.close(promise: nil)
+                            await self.handleTransportLoss(connectionID: connectionID, reason: "Forwarding channel failed")
                         }
                     }
                 }
@@ -134,6 +178,14 @@ final class SSHConnectionManager: ObservableObject {
                 throw SSHConnectionError.forwardingFailed("No local port was assigned.")
             }
             print("[SSH] local forwarding started port=\(port)")
+            print("[SSH] listener active port=\(port)")
+            listener.closeFuture.whenComplete { [weak self] _ in
+                guard let self, self.activeConnectionID == connectionID, !self.isDisconnecting else { return }
+                print("[SSH] forwarding listener closed unexpectedly")
+                Task { [weak self] in
+                    await self?.handleTransportLoss(connectionID: connectionID, reason: "Forwarding listener closed")
+                }
+            }
             return URL(string: "http://127.0.0.1:\(port)")!
         } catch {
             throw SSHConnectionError.forwardingFailed(error.localizedDescription)
@@ -155,6 +207,14 @@ final class SSHConnectionManager: ObservableObject {
         return .networkFailure(error.localizedDescription)
     }
 
+    private func handleTransportLoss(connectionID: UUID?, reason: String) async {
+        guard let connectionID,
+              activeConnectionID == connectionID,
+              !isDisconnecting else { return }
+        print("[SSH] connection lost: \(reason)")
+        await disconnect()
+    }
+
     private func withTimeout<T>(seconds: UInt64, operation: @escaping () async throws -> T) async throws -> T {
         try await withThrowingTaskGroup(of: T.self) { group in
             group.addTask { try await operation() }
@@ -173,6 +233,13 @@ private final class LocalForwardingHandler: ChannelInboundHandler {
 
     private var peer: Channel?
     private var pending: [ByteBuffer] = []
+    private let label: String
+    private let onInactive: () -> Void
+
+    init(label: String, onInactive: @escaping () -> Void = {}) {
+        self.label = label
+        self.onInactive = onInactive
+    }
 
     func setPeer(_ peer: Channel) {
         self.peer = peer
@@ -192,11 +259,14 @@ private final class LocalForwardingHandler: ChannelInboundHandler {
     }
 
     func channelInactive(context: ChannelHandlerContext) {
+        print("[SSH] \(label) closed")
         peer?.close(promise: nil)
+        onInactive()
         context.fireChannelInactive()
     }
 
     func errorCaught(context: ChannelHandlerContext, error: Error) {
+        print("[SSH] \(label) error: \(error.localizedDescription)")
         peer?.close(promise: nil)
         context.close(promise: nil)
     }
