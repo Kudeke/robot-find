@@ -103,6 +103,19 @@ class RuntimeManager:
             logger.info("[RuntimeManager] mission_id=%s starting -> running", mission_id)
             return mission
 
+    def runtime_completed(self, mission_id: str) -> Mission:
+        with self._lock:
+            mission = self._load(mission_id)
+            if mission.state != MissionState.RUNNING:
+                raise RuntimeInvalidTransition(
+                    f"runtime-completed requires state running, got {mission.state.value}"
+                )
+            mission.state = MissionState.TARGET_FOUND
+            mission.error = None
+            save_mission(mission)
+            logger.info("[RuntimeManager] mission_id=%s running -> target_found", mission_id)
+            return mission
+
     def stop(self, mission_id: str) -> Mission:
         with self._lock:
             mission = self._load(mission_id)

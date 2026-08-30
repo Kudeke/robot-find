@@ -25,7 +25,7 @@ def _run(operation, mission_id: str):
     except RuntimeConflict as exc:
         raise HTTPException(409, str(exc))
     except RuntimeInvalidTransition as exc:
-        raise HTTPException(422, str(exc))
+        raise HTTPException(409, str(exc))
 
 
 @router.post("/api/v1/missions/{mission_id}/start")
@@ -46,6 +46,11 @@ def runtime_started(mission_id: str):
     return _payload(_run(manager.runtime_started, mission_id))
 
 
+@router.post("/api/v1/missions/{mission_id}/runtime-completed")
+def runtime_completed(mission_id: str):
+    return _payload(_run(manager.runtime_completed, mission_id))
+
+
 @router.post("/api/v1/missions/{mission_id}/stop")
 def stop_mission(mission_id: str):
     return _payload(_run(manager.stop, mission_id))
@@ -63,4 +68,4 @@ def runtime_failed(mission_id: str, request: RuntimeFailedRequest):
     except RuntimeMissionNotFound:
         raise HTTPException(404, "mission not found")
     except RuntimeInvalidTransition as exc:
-        raise HTTPException(422, str(exc))
+        raise HTTPException(409, str(exc))

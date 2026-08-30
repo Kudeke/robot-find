@@ -11,6 +11,7 @@ class MissionState(str, Enum):
     RUNNING = "running"
     STOPPING = "stopping"
     STOPPED = "stopped"
+    TARGET_FOUND = "target_found"
     FAILED = "failed"
 
 
