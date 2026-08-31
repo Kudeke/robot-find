@@ -4,6 +4,7 @@ import base64
 import json
 import threading
 import time
+from collections import deque
 from typing import Any
 
 import rclpy
@@ -13,7 +14,11 @@ from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String
 
-from .mission_api_client import ActiveMission, MissionApiClient, MissionApiError
+from .mission_api_client import (
+    ActiveMission,
+    MissionApiClient,
+    MissionApiError,
+)
 
 CAMERA_TOPIC = "/remote/camera/color/compressed"
 ACTION_TOPIC = "/vln/uninavid/actions"
@@ -21,6 +26,9 @@ VALID_ACTIONS = {"forward", "left", "right", "stop"}
 MISSION_POLL_SEC = 1.0
 MISSION_API_FAILURE_LIMIT_SEC = 5.0
 STOP_COMPLETION_THRESHOLD = 3
+DEFAULT_RECOVERY_TURN_ACTION = "left"
+DEFAULT_RECOVERY_TURN_DURATION_SEC = 0.35
+DEFAULT_VERIFIER_RETRIES = 2
 
 
 def stamp_to_ns(stamp: Any) -> int:
@@ -29,7 +37,10 @@ def stamp_to_ns(stamp: Any) -> int:
 
 class UniNaVidClientNode(Node):
     def __init__(self, server_url: str, instruction: str | None, mission_api_url: str | None,
-                 session_id: str = "go2", rate_hz: float = 1.0) -> None:
+                 session_id: str = "go2", rate_hz: float = 1.0,
+                 verifier_retries: int = DEFAULT_VERIFIER_RETRIES,
+                 recovery_turn_action: str = DEFAULT_RECOVERY_TURN_ACTION,
+                 recovery_turn_duration_sec: float = DEFAULT_RECOVERY_TURN_DURATION_SEC) -> None:
         super().__init__("uninavid_client")
         if (instruction is None) == (mission_api_url is None):
             raise ValueError("provide exactly one of --instruction or --mission-api-url")
@@ -37,12 +48,21 @@ class UniNaVidClientNode(Node):
             raise ValueError("--instruction must not be empty")
         if rate_hz <= 0:
             raise ValueError("--rate-hz must be greater than zero")
+        if verifier_retries <= 0:
+            raise ValueError("--verifier-retries must be greater than zero")
+        if recovery_turn_action not in {"left", "right"}:
+            raise ValueError("--recovery-turn-action must be left or right")
+        if recovery_turn_duration_sec <= 0:
+            raise ValueError("--recovery-turn-duration-sec must be greater than zero")
         self.server_url = server_url
         self.instruction = instruction or ""
         self.session_id = session_id
         self.rate_hz = rate_hz
         self.mission_mode = mission_api_url is not None
         self.mission_api = MissionApiClient(mission_api_url) if mission_api_url else None
+        self.verifier_retries = verifier_retries
+        self.recovery_turn_action = recovery_turn_action
+        self.recovery_turn_duration_sec = recovery_turn_duration_sec
 
         self.latest_lock = threading.Lock()
         self.latest_jpeg: bytes | None = None
@@ -61,9 +81,14 @@ class UniNaVidClientNode(Node):
 
         self.mission_lock = threading.Lock()
         self.active_mission: ActiveMission | None = None
+        self.runtime_instruction = ""
         self.mission_terminal: str | None = None
         self.mission_terminal_error = ""
         self.consecutive_stop_inferences = 0
+        self.non_stop_frames: deque[bytes] = deque(maxlen=3)
+        self.first_stop_frame: bytes | None = None
+        self.verifier_attempts = 0
+        self.runtime_resume_pending = False
         self.runtime_active = threading.Event()
         self.api_unavailable_since: float | None = None
         self.api_failure_logged = False
@@ -140,14 +165,20 @@ class UniNaVidClientNode(Node):
                         if mission_id is None or self.mission_stop.is_set():
                             break
                         try:
-                            await asyncio.to_thread(self.mission_api.ack_runtime_started, mission_id)
+                            if self.runtime_resume_pending:
+                                await asyncio.to_thread(self.mission_api.ack_runtime_resumed, mission_id)
+                                self.runtime_resume_pending = False
+                                print("[Mission] runtime-resumed acknowledged", flush=True)
+                                print("[Mission] search resumed", flush=True)
+                            else:
+                                await asyncio.to_thread(self.mission_api.ack_runtime_started, mission_id)
+                                print("[Mission] runtime-started acknowledged", flush=True)
                         except Exception as exc:  # noqa: BLE001
                             self._begin_terminal("failed", f"runtime-started failed: {exc}")
                             break
                         if self.mission_stop.is_set():
                             break
                         self.runtime_active.set()
-                        print("[Mission] runtime-started acknowledged", flush=True)
                     self.connected.set()
                     print("[VLN] connected", flush=True)
                     while not self.stop_requested.is_set():
@@ -210,7 +241,7 @@ class UniNaVidClientNode(Node):
             print(f"[VLN] result frame_seq={result_frame_seq} actions={actions} "
                   f"inference_ms={float(response.get('inference_ms', 0.0)):.1f}", flush=True)
             if self.mission_mode:
-                self._record_inference_result(raw_actions)
+                self._record_inference_result(raw_actions, jpeg)
             if not self.mission_mode or self.runtime_active.is_set():
                 self._publish_actions({"frame_seq": result_frame_seq, "actions": actions,
                                        "raw_output": str(response.get("raw_output", "")),
@@ -230,8 +261,8 @@ class UniNaVidClientNode(Node):
         cleaned = [str(action).lower() for action in actions if str(action).lower() in VALID_ACTIONS]
         return cleaned or ["stop"]
 
-    def _record_inference_result(self, raw_actions: Any) -> None:
-        """Count complete inference responses, not individual stop actions."""
+    def _record_inference_result(self, raw_actions: Any, jpeg: bytes) -> None:
+        """Track exact inference input frames and stop-response stability."""
         if not isinstance(raw_actions, list) or not raw_actions:
             all_stop = False
         else:
@@ -244,17 +275,22 @@ class UniNaVidClientNode(Node):
             if all_stop:
                 self.consecutive_stop_inferences += 1
                 count = self.consecutive_stop_inferences
+                if count == 1:
+                    self.first_stop_frame = bytes(jpeg)
             else:
+                self.non_stop_frames.append(bytes(jpeg))
                 self.consecutive_stop_inferences = 0
+                self.first_stop_frame = None
                 count = 0
 
         if all_stop:
-            print(f"[Mission] stop inference count={count}/{STOP_COMPLETION_THRESHOLD}", flush=True)
+            suffix = " first-stop frame captured" if count == 1 else ""
+            print(f"[Verifier] stop count={count}/{STOP_COMPLETION_THRESHOLD}{suffix}", flush=True)
             if count >= STOP_COMPLETION_THRESHOLD:
-                if self._begin_terminal("completed", "three consecutive stop inferences"):
-                    print("[Mission] completion detected", flush=True)
+                if self._begin_terminal("verifying", "three consecutive stop inferences"):
+                    print("[Verifier] candidate stop stable; verification pending", flush=True)
         elif previous:
-            print("[Mission] stop inference counter reset", flush=True)
+            print("[Verifier] stop inference counter reset", flush=True)
 
     def _publish_actions(self, payload: dict[str, Any]) -> None:
         if self.stop_requested.is_set() or not rclpy.ok():
@@ -268,8 +304,11 @@ class UniNaVidClientNode(Node):
                 print(f"[VLN][ERROR] Failed to publish: {exc}", flush=True)
 
     def _publish_stop_action(self) -> None:
+        self._publish_actions({"frame_seq": self._next_frame_seq(), "actions": ["stop"]})
+
+    def _next_frame_seq(self) -> int:
         self.frame_seq += 1
-        self._publish_actions({"frame_seq": self.frame_seq, "actions": ["stop"]})
+        return self.frame_seq
 
     def _clear_in_flight(self) -> None:
         with self.infer_lock:
@@ -277,7 +316,9 @@ class UniNaVidClientNode(Node):
 
     def _current_instruction(self) -> str:
         with self.mission_lock:
-            return self.active_mission.navigation_instruction if self.active_mission else self.instruction
+            if self.active_mission:
+                return self.runtime_instruction or self.active_mission.navigation_instruction
+            return self.instruction
 
     def _mission_id(self) -> str | None:
         with self.mission_lock:
@@ -299,6 +340,12 @@ class UniNaVidClientNode(Node):
         with self.mission_lock:
             current, terminal = self.active_mission, self.mission_terminal
         if terminal is not None:
+            if (active is not None and current is not None
+                    and active.mission_id == current.mission_id
+                    and active.state == "stopping"
+                    and terminal in {"verifying", "recovering"}):
+                if self._begin_terminal("stopped", "server requested stop"):
+                    print("[Mission] manual stop wins over candidate verification", flush=True)
             return
         if current is None:
             if active is None:
@@ -312,6 +359,8 @@ class UniNaVidClientNode(Node):
                 return
             with self.mission_lock:
                 self.active_mission = active
+                self.runtime_instruction = active.navigation_instruction
+                self._reset_evidence_locked()
             print(f"[Mission] active mission detected mission_id={active.mission_id}", flush=True)
             print(f"[Mission] object_id={active.object_id} instruction="
                   f"\"{active.navigation_instruction}\"", flush=True)
@@ -340,20 +389,42 @@ class UniNaVidClientNode(Node):
         if self._mission_id() is not None and now - self.api_unavailable_since >= MISSION_API_FAILURE_LIMIT_SEC:
             self._begin_terminal("failed", "Mission API unavailable for 5s")
 
-    def _begin_terminal(self, outcome: str, error: str) -> None:
+    def _reset_evidence_locked(self) -> None:
+        self.consecutive_stop_inferences = 0
+        self.first_stop_frame = None
+        self.non_stop_frames.clear()
+
+    def _candidate_evidence(self) -> dict[str, bytes] | None:
+        with self.mission_lock:
+            if len(self.non_stop_frames) < 3 or self.first_stop_frame is None:
+                return None
+            frames = list(self.non_stop_frames)
+            first_stop = bytes(self.first_stop_frame)
+        return {
+            "last_non_stop_1": frames[0],
+            "last_non_stop_2": frames[1],
+            "last_non_stop_3": frames[2],
+            "first_stop": first_stop,
+        }
+
+    def _begin_terminal(self, outcome: str, error: str) -> bool:
         with self.mission_lock:
             if self.active_mission is None or self.mission_terminal is not None:
-                return
+                if not (outcome == "stopped" and self.mission_terminal in {"verifying", "recovering"}):
+                    return False
             self.mission_terminal, self.mission_terminal_error = outcome, error
-            if outcome != "completed":
-                self.consecutive_stop_inferences = 0
+            if outcome in {"stopped", "failed"}:
+                self._reset_evidence_locked()
         self.runtime_active.clear()
         self.mission_stop.set()
         self.connected.clear()
         self._clear_in_flight()
         self._publish_stop_action()
         self.mission_wakeup.set()
+        if outcome in {"verifying", "stopped", "failed"}:
+            print("[Mission] shutting down Uni-NaVid session", flush=True)
         print(f"[Mission] safe stop initiated reason={error}", flush=True)
+        return True
 
     def _finish_terminal_if_ready(self) -> None:
         with self.mission_lock:
@@ -361,6 +432,29 @@ class UniNaVidClientNode(Node):
         if mission is None or outcome is None or not self.session_closed.is_set():
             return
         try:
+            if outcome == "verifying":
+                evidence = self._candidate_evidence()
+                if evidence is None:
+                    print("[Verifier] insufficient evidence; resuming search conservatively", flush=True)
+                    self._resume_after_rejection("insufficient candidate evidence")
+                    return
+                print("[Verifier] candidate evidence ready: 3 non-stop + first-stop", flush=True)
+                self.verifier_attempts += 1
+                print("[Verifier] uploading candidate", flush=True)
+                verification = self.mission_api.verify_candidate(mission.mission_id, evidence)
+                with self.mission_lock:
+                    if self.mission_terminal != "verifying":
+                        return
+                self.verifier_attempts = 0
+                confidence = (f" confidence={verification.confidence:.3f}"
+                              if verification.confidence is not None else "")
+                print(f"[Verifier] result={verification.result}{confidence}", flush=True)
+                if verification.result == "same_object":
+                    with self.mission_lock:
+                        self.mission_terminal = "completed"
+                    return
+                self._resume_after_rejection(verification.result)
+                return
             if outcome == "completed":
                 state = self.mission_api.ack_runtime_completed(mission.mission_id)
                 print(f"[Mission] runtime-completed acknowledged state={state or 'unknown'}", flush=True)
@@ -371,16 +465,71 @@ class UniNaVidClientNode(Node):
                 self.mission_api.report_runtime_failed(mission.mission_id, error)
                 print(f"[Mission] runtime-failed reported error={error}", flush=True)
         except MissionApiError as exc:
-            print(f"[Mission][WARN] terminal acknowledgement failed: {exc}", flush=True)
+            with self.mission_lock:
+                if self.mission_terminal != outcome:
+                    return
+            if outcome == "verifying" and self.verifier_attempts >= self.verifier_retries:
+                with self.mission_lock:
+                    self.mission_terminal = "failed"
+                    self.mission_terminal_error = f"candidate verification failed: {exc}"
+                    self._reset_evidence_locked()
+                print(f"[Mission][ERROR] verifier unavailable after {self.verifier_attempts} attempts: {exc}", flush=True)
+            else:
+                print(f"[Mission][WARN] terminal acknowledgement failed: {exc}", flush=True)
             return
         with self.mission_lock:
             self.active_mission = None
+            self.runtime_instruction = ""
             self.mission_terminal = None
             self.mission_terminal_error = ""
-            self.consecutive_stop_inferences = 0
+            self._reset_evidence_locked()
+            self.runtime_resume_pending = False
+            self.verifier_attempts = 0
         self.mission_stop.clear()
         self.runtime_active.clear()
         print("[Mission] back to idle", flush=True)
+
+    def _resume_after_rejection(self, reason: str) -> None:
+        mission_id = self._mission_id()
+        if mission_id is None:
+            return
+        with self.mission_lock:
+            if self.mission_terminal == "verifying":
+                self.mission_terminal = "recovering"
+        print(f"[Mission] candidate rejected reason={reason}", flush=True)
+        print("[Mission] recovery start", flush=True)
+        self._publish_actions({"frame_seq": self._next_frame_seq(),
+                               "actions": [self.recovery_turn_action]})
+        self.stop_requested.wait(self.recovery_turn_duration_sec)
+        self._publish_stop_action()
+        self.stop_requested.wait(0.1)
+
+        try:
+            active = self.mission_api.get_active_mission()
+        except MissionApiError as exc:
+            with self.mission_lock:
+                self.mission_terminal = "failed"
+                self.mission_terminal_error = f"Mission API unavailable during recovery: {exc}"
+                self._reset_evidence_locked()
+            return
+        if active is not None and active.state == "stopping":
+            self._begin_terminal("stopped", "server requested stop during recovery")
+            return
+
+        with self.mission_lock:
+            canonical = self.active_mission.navigation_instruction
+            self.runtime_instruction = (
+                "Continue searching. The object just rejected is not the target. "
+                + canonical
+            )
+            self._reset_evidence_locked()
+            self.runtime_resume_pending = True
+            self.mission_terminal = None
+            self.mission_terminal_error = ""
+        self.mission_stop.clear()
+        self.session_closed.set()
+        self.mission_wakeup.set()
+        print("[Mission] Uni-NaVid session reset", flush=True)
 
     def stop(self) -> None:
         if self.mission_mode and self._mission_id() is not None:
@@ -418,6 +567,9 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument("--mission-api-url")
     parser.add_argument("--session-id", default="go2")
     parser.add_argument("--rate-hz", type=float, default=1.0)
+    parser.add_argument("--verifier-retries", type=int, default=2)
+    parser.add_argument("--recovery-turn-action", choices=("left", "right"), default="left")
+    parser.add_argument("--recovery-turn-duration-sec", type=float, default=0.35)
     return parser.parse_args()
 
 
@@ -426,7 +578,8 @@ def main() -> None:
     rclpy.init()
     try:
         node = UniNaVidClientNode(args.server_url, args.instruction, args.mission_api_url,
-                                  args.session_id, args.rate_hz)
+                                  args.session_id, args.rate_hz, args.verifier_retries,
+                                  args.recovery_turn_action, args.recovery_turn_duration_sec)
     except Exception:
         if rclpy.ok():
             rclpy.shutdown()

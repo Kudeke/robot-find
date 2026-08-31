@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from uuid import uuid4
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -17,6 +18,12 @@ class ActiveMission:
     object_id: str
     navigation_instruction: str
     state: str
+
+
+@dataclass(frozen=True)
+class CandidateVerification:
+    result: str
+    confidence: float | None
 
 
 class MissionApiClient:
@@ -51,6 +58,32 @@ class MissionApiClient:
         state = response.get("state")
         return str(state).strip().lower() if state is not None else None
 
+    def verify_candidate(
+        self,
+        mission_id: str,
+        evidence: dict[str, bytes],
+    ) -> CandidateVerification:
+        response = self._request_multipart(
+            "POST", f"/api/v1/missions/{mission_id}/verify-candidate", evidence
+        )
+        if not isinstance(response, dict):
+            raise MissionApiError("verify-candidate response must be a JSON object")
+        nested = response.get("verification")
+        if isinstance(nested, dict):
+            response = nested
+        result = str(response.get("result") or response.get("verification_result") or "").strip().lower()
+        if result not in {"same_object", "different_object", "uncertain"}:
+            raise MissionApiError(f"invalid verify-candidate result: {result!r}")
+        confidence_value = response.get("confidence")
+        try:
+            confidence = float(confidence_value) if confidence_value is not None else None
+        except (TypeError, ValueError):
+            confidence = None
+        return CandidateVerification(result, confidence)
+
+    def ack_runtime_resumed(self, mission_id: str) -> None:
+        self._request("POST", f"/api/v1/missions/{mission_id}/runtime-resumed")
+
     def report_runtime_failed(self, mission_id: str, error: str) -> None:
         self._request("POST", f"/api/v1/missions/{mission_id}/runtime-failed", {"error": error[:500]})
 
@@ -66,6 +99,44 @@ class MissionApiClient:
         except HTTPError as exc:
             if method == "GET" and path.endswith("/missions/active") and exc.code == 404:
                 return None
+            detail = exc.read().decode(errors="replace")[:300]
+            raise MissionApiError(f"HTTP {exc.code} for {path}: {detail}") from exc
+        except (URLError, OSError, TimeoutError) as exc:
+            raise MissionApiError(f"Mission API unavailable for {path}: {exc}") from exc
+        if not raw:
+            return {}
+        try:
+            return json.loads(raw.decode())
+        except json.JSONDecodeError as exc:
+            raise MissionApiError(f"invalid JSON response from {path}") from exc
+
+    def _request_multipart(self, method: str, path: str, files: dict[str, bytes]) -> object:
+        boundary = f"----RobotFind{uuid4().hex}"
+        parts: list[bytes] = []
+        for field_name, content in files.items():
+            parts.extend(
+                [
+                    f"--{boundary}\r\n".encode(),
+                    f'Content-Disposition: form-data; name="{field_name}"; filename="{field_name}.jpg"\r\n'.encode(),
+                    b"Content-Type: image/jpeg\r\n\r\n",
+                    bytes(content),
+                    b"\r\n",
+                ]
+            )
+        parts.append(f"--{boundary}--\r\n".encode())
+        request = Request(
+            f"{self.base_url}{path}",
+            data=b"".join(parts),
+            headers={
+                "Accept": "application/json",
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+            },
+            method=method,
+        )
+        try:
+            with urlopen(request, timeout=self.timeout_sec) as response:
+                raw = response.read()
+        except HTTPError as exc:
             detail = exc.read().decode(errors="replace")[:300]
             raise MissionApiError(f"HTTP {exc.code} for {path}: {detail}") from exc
         except (URLError, OSError, TimeoutError) as exc:
