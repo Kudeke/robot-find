@@ -3,6 +3,9 @@ __pycache__
 *.pyc
 *.egg-info
 dist
+.venv/
+venv/
+ubuntu_station/venv/
 
 # Log
 *.log
@@ -23,6 +26,7 @@ output
 work_dirs
 data
 model_zoo
+hf_download
 
 test_cases
 
@@ -32,6 +36,12 @@ ckpts*
 .ipynb_checkpoints
 *.ipynb
 
+# Local runtime state
+.cache/
+ubuntu_station/log/
+\[38
+
 # DevContainer
 !.devcontainer/*
-
+.micromamba/
+.micromamba-bin/
