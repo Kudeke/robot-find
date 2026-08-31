@@ -28,6 +28,7 @@ MISSION_API_FAILURE_LIMIT_SEC = 5.0
 STOP_COMPLETION_THRESHOLD = 3
 DEFAULT_RECOVERY_TURN_ACTION = "left"
 DEFAULT_RECOVERY_TURN_DURATION_SEC = 0.35
+DEFAULT_RECOVERY_TURN_REPETITIONS = 4
 DEFAULT_VERIFIER_RETRIES = 2
 
 
@@ -40,7 +41,8 @@ class UniNaVidClientNode(Node):
                  session_id: str = "go2", rate_hz: float = 1.0,
                  verifier_retries: int = DEFAULT_VERIFIER_RETRIES,
                  recovery_turn_action: str = DEFAULT_RECOVERY_TURN_ACTION,
-                 recovery_turn_duration_sec: float = DEFAULT_RECOVERY_TURN_DURATION_SEC) -> None:
+                 recovery_turn_duration_sec: float = DEFAULT_RECOVERY_TURN_DURATION_SEC,
+                 recovery_turn_repetitions: int = DEFAULT_RECOVERY_TURN_REPETITIONS) -> None:
         super().__init__("uninavid_client")
         if (instruction is None) == (mission_api_url is None):
             raise ValueError("provide exactly one of --instruction or --mission-api-url")
@@ -54,6 +56,8 @@ class UniNaVidClientNode(Node):
             raise ValueError("--recovery-turn-action must be left or right")
         if recovery_turn_duration_sec <= 0:
             raise ValueError("--recovery-turn-duration-sec must be greater than zero")
+        if recovery_turn_repetitions <= 0:
+            raise ValueError("--recovery-turn-repetitions must be greater than zero")
         self.server_url = server_url
         self.instruction = instruction or ""
         self.session_id = session_id
@@ -63,6 +67,7 @@ class UniNaVidClientNode(Node):
         self.verifier_retries = verifier_retries
         self.recovery_turn_action = recovery_turn_action
         self.recovery_turn_duration_sec = recovery_turn_duration_sec
+        self.recovery_turn_repetitions = recovery_turn_repetitions
 
         self.latest_lock = threading.Lock()
         self.latest_jpeg: bytes | None = None
@@ -497,10 +502,12 @@ class UniNaVidClientNode(Node):
             if self.mission_terminal == "verifying":
                 self.mission_terminal = "recovering"
         print(f"[Mission] candidate rejected reason={reason}", flush=True)
-        print("[Mission] recovery start", flush=True)
-        self._publish_actions({"frame_seq": self._next_frame_seq(),
-                               "actions": [self.recovery_turn_action]})
-        self.stop_requested.wait(self.recovery_turn_duration_sec)
+        print(f"[Mission] recovery start action={self.recovery_turn_action} "
+              f"repetitions={self.recovery_turn_repetitions}", flush=True)
+        for _ in range(self.recovery_turn_repetitions):
+            self._publish_actions({"frame_seq": self._next_frame_seq(),
+                                   "actions": [self.recovery_turn_action]})
+            self.stop_requested.wait(self.recovery_turn_duration_sec)
         self._publish_stop_action()
         self.stop_requested.wait(0.1)
 
@@ -570,6 +577,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--verifier-retries", type=int, default=2)
     parser.add_argument("--recovery-turn-action", choices=("left", "right"), default="left")
     parser.add_argument("--recovery-turn-duration-sec", type=float, default=0.35)
+    parser.add_argument("--recovery-turn-repetitions", type=int, default=4)
     return parser.parse_args()
 
 
@@ -579,7 +587,8 @@ def main() -> None:
     try:
         node = UniNaVidClientNode(args.server_url, args.instruction, args.mission_api_url,
                                   args.session_id, args.rate_hz, args.verifier_retries,
-                                  args.recovery_turn_action, args.recovery_turn_duration_sec)
+                                  args.recovery_turn_action, args.recovery_turn_duration_sec,
+                                  args.recovery_turn_repetitions)
     except Exception:
         if rclpy.ok():
             rclpy.shutdown()
