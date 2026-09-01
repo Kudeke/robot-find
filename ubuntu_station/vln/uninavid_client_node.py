@@ -305,12 +305,17 @@ class UniNaVidClientNode(Node):
             suffix = " first-stop frame captured" if count == 1 else ""
             print(f"[Verifier] stop count={count}/{STOP_COMPLETION_THRESHOLD}{suffix}", flush=True)
             if count >= STOP_COMPLETION_THRESHOLD:
-                if self._begin_terminal("verifying", "three consecutive stop inferences"):
-                    with self.mission_lock:
+                # Initialize candidate state before closing the Uni-NaVid session.
+                # The mission poller may begin verification as soon as session_closed is set.
+                with self.mission_lock:
+                    if self.mission_terminal is None and self.active_mission is not None:
                         self.active_candidate_id = f"cand_{uuid4().hex}"
                         self.candidate_submission_state = "pending"
                         self.candidate_verification_started_at = time.monotonic()
                         candidate_id = self.active_candidate_id
+                    else:
+                        candidate_id = None
+                if candidate_id and self._begin_terminal("verifying", "three consecutive stop inferences"):
                     print(f"[Verifier] candidate_id={candidate_id} created", flush=True)
                     print("[Verifier] candidate stop stable; verification pending", flush=True)
         elif previous:
@@ -560,7 +565,8 @@ class UniNaVidClientNode(Node):
                     self._reset_evidence_locked()
                 print(f"[Mission][ERROR] verifier unavailable: {exc}", flush=True)
             else:
-                print(f"[Mission][WARN] terminal acknowledgement failed: {exc}", flush=True)
+                label = "Verifier" if outcome == "verifying" else "Mission"
+                print(f"[{label}][WARN] terminal acknowledgement failed: {exc}", flush=True)
             return
         with self.mission_lock:
             self.active_mission = None
