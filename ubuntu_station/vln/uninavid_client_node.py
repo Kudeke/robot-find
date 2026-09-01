@@ -19,7 +19,6 @@ from .mission_api_client import (
     ActiveMission,
     MissionApiClient,
     MissionApiError,
-    CandidateVerificationStatus,
 )
 
 CAMERA_TOPIC = "/remote/camera/color/compressed"
@@ -27,7 +26,9 @@ ACTION_TOPIC = "/vln/uninavid/actions"
 VALID_ACTIONS = {"forward", "left", "right", "stop"}
 MISSION_POLL_SEC = 1.0
 MISSION_API_FAILURE_LIMIT_SEC = 5.0
-VERIFICATION_DEADLINE_SEC = 300.0
+VERIFICATION_API_OUTAGE_TIMEOUT_SEC = 60.0
+VERIFICATION_HARD_DEADLINE_SEC = 900.0
+VERIFICATION_PROGRESS_LOG_SEC = 10.0
 STOP_COMPLETION_THRESHOLD = 3
 DEFAULT_RECOVERY_TURN_ACTION = "left"
 DEFAULT_RECOVERY_TURN_DURATION_SEC = 0.35
@@ -45,7 +46,8 @@ class UniNaVidClientNode(Node):
                  verifier_retries: int = DEFAULT_VERIFIER_RETRIES,
                  recovery_turn_action: str = DEFAULT_RECOVERY_TURN_ACTION,
                  recovery_turn_duration_sec: float = DEFAULT_RECOVERY_TURN_DURATION_SEC,
-                 recovery_turn_repetitions: int = DEFAULT_RECOVERY_TURN_REPETITIONS) -> None:
+                 recovery_turn_repetitions: int = DEFAULT_RECOVERY_TURN_REPETITIONS,
+                 verification_hard_deadline_sec: float = VERIFICATION_HARD_DEADLINE_SEC) -> None:
         super().__init__("uninavid_client")
         if (instruction is None) == (mission_api_url is None):
             raise ValueError("provide exactly one of --instruction or --mission-api-url")
@@ -61,6 +63,8 @@ class UniNaVidClientNode(Node):
             raise ValueError("--recovery-turn-duration-sec must be greater than zero")
         if recovery_turn_repetitions <= 0:
             raise ValueError("--recovery-turn-repetitions must be greater than zero")
+        if verification_hard_deadline_sec <= 0:
+            raise ValueError("--verification-hard-deadline-sec must be greater than zero")
         self.server_url = server_url
         self.instruction = instruction or ""
         self.session_id = session_id
@@ -71,6 +75,7 @@ class UniNaVidClientNode(Node):
         self.recovery_turn_action = recovery_turn_action
         self.recovery_turn_duration_sec = recovery_turn_duration_sec
         self.recovery_turn_repetitions = recovery_turn_repetitions
+        self.verification_hard_deadline_sec = verification_hard_deadline_sec
 
         self.latest_lock = threading.Lock()
         self.latest_jpeg: bytes | None = None
@@ -99,6 +104,8 @@ class UniNaVidClientNode(Node):
         self.active_candidate_id: str | None = None
         self.candidate_submission_state = "none"
         self.candidate_verification_started_at: float | None = None
+        self.verification_api_outage_since: float | None = None
+        self.verification_last_progress_log = 0.0
         self.runtime_resume_pending = False
         self.runtime_active = threading.Event()
         self.api_unavailable_since: float | None = None
@@ -403,8 +410,25 @@ class UniNaVidClientNode(Node):
         if not self.api_failure_logged:
             print(f"[Mission][WARN] API unavailable: {exc}", flush=True)
             self.api_failure_logged = True
-        if self._mission_id() is not None and now - self.api_unavailable_since >= MISSION_API_FAILURE_LIMIT_SEC:
-            self._begin_terminal("failed", "Mission API unavailable for 5s")
+        with self.mission_lock:
+            verifying = self.mission_terminal == "verifying"
+        failure_limit = VERIFICATION_API_OUTAGE_TIMEOUT_SEC if verifying else MISSION_API_FAILURE_LIMIT_SEC
+        if self._mission_id() is not None and now - self.api_unavailable_since >= failure_limit:
+            reason = (f"Mission API unavailable during verification for {failure_limit:.0f}s"
+                      if verifying else "Mission API unavailable for 5s")
+            self._begin_terminal("failed", reason)
+
+    def _reset_verification_api_outage(self) -> None:
+        self.verification_api_outage_since = None
+
+    def _note_verification_api_failure(self, exc: Exception) -> None:
+        now = time.monotonic()
+        if self.verification_api_outage_since is None:
+            self.verification_api_outage_since = now
+        outage = now - self.verification_api_outage_since
+        print(f"[Verifier][WARN] Mission API temporarily unavailable outage={outage:.1f}s: {exc}", flush=True)
+        if outage >= VERIFICATION_API_OUTAGE_TIMEOUT_SEC:
+            self._begin_terminal("failed", "Mission API unavailable during verification for 60s")
 
     def _reset_evidence_locked(self) -> None:
         self.consecutive_stop_inferences = 0
@@ -457,15 +481,17 @@ class UniNaVidClientNode(Node):
                     started = self.candidate_verification_started_at or time.monotonic()
                 if evidence is None or not candidate_id:
                     raise MissionApiError("candidate evidence or candidate_id unavailable")
-                if time.monotonic() - started >= VERIFICATION_DEADLINE_SEC:
-                    raise MissionApiError("candidate verification deadline expired")
+                if time.monotonic() - started >= self.verification_hard_deadline_sec:
+                    raise MissionApiError("verification hard deadline exceeded")
                 status = None
                 if submission_state in {"pending", "none"}:
                     try:
                         print(f"[Verifier] submitting candidate {candidate_id}", flush=True)
                         status = self.mission_api.verify_candidate(mission.mission_id, candidate_id, evidence)
+                        self._reset_verification_api_outage()
                         with self.mission_lock:
                             self.candidate_submission_state = "submitted"
+                        self._reset_verification_api_outage()
                         print(f"[Verifier] candidate {candidate_id} status={status.status}", flush=True)
                     except MissionApiError as exc:
                         with self.mission_lock:
@@ -475,20 +501,36 @@ class UniNaVidClientNode(Node):
                         else:
                             print(f"[Verifier] POST timeout/error; checking candidate {candidate_id}: {exc}", flush=True)
                 if status is None:
-                    status = self.mission_api.get_candidate_verification(mission.mission_id, candidate_id)
+                    try:
+                        status = self.mission_api.get_candidate_verification(mission.mission_id, candidate_id)
+                    except MissionApiError as exc:
+                        self._note_verification_api_failure(exc)
+                        return
+                    self._reset_verification_api_outage()
                     if status is None:
                         print(f"[Verifier] candidate {candidate_id} not found; retrying same candidate_id", flush=True)
                         status = self.mission_api.verify_candidate(mission.mission_id, candidate_id, evidence)
+                        self._reset_verification_api_outage()
                         with self.mission_lock:
                             self.candidate_submission_state = "submitted"
                 if status.status == "processing":
-                    print(f"[Verifier] candidate {candidate_id} status=processing", flush=True)
+                    now = time.monotonic()
+                    elapsed = now - started
+                    if (self.verification_last_progress_log == 0.0
+                            or now - self.verification_last_progress_log >= VERIFICATION_PROGRESS_LOG_SEC):
+                        print(f"[Verifier] candidate {candidate_id} still processing elapsed={elapsed:.1f}s", flush=True)
+                        self.verification_last_progress_log = now
                     return
                 if status.status == "failed":
-                    raise MissionApiError(status.error or "server verifier reported failed")
+                    with self.mission_lock:
+                        self.mission_terminal = "failed"
+                        self.mission_terminal_error = status.error or "server verifier reported failed"
+                    print(f"[Verifier][ERROR] candidate {candidate_id} status=failed", flush=True)
+                    return
                 if status.result not in {"same_object", "different_object", "uncertain"}:
                     raise MissionApiError("completed verification has no valid result")
-                print(f"[Verifier] candidate {candidate_id} status=completed result={status.result}", flush=True)
+                print(f"[Verifier] candidate {candidate_id} status=completed result={status.result} "
+                      f"elapsed={time.monotonic() - started:.1f}s", flush=True)
                 self.verifier_attempts = 0
                 if status.result == "same_object":
                     with self.mission_lock:
@@ -510,7 +552,7 @@ class UniNaVidClientNode(Node):
                 if self.mission_terminal != outcome:
                     return
             deadline_expired = (outcome == "verifying" and self.candidate_verification_started_at is not None
-                                and time.monotonic() - self.candidate_verification_started_at >= VERIFICATION_DEADLINE_SEC)
+                                and time.monotonic() - self.candidate_verification_started_at >= self.verification_hard_deadline_sec)
             if outcome == "verifying" and (deadline_expired or self.verifier_attempts >= self.verifier_retries):
                 with self.mission_lock:
                     self.mission_terminal = "failed"
@@ -531,6 +573,8 @@ class UniNaVidClientNode(Node):
             self.active_candidate_id = None
             self.candidate_submission_state = "none"
             self.candidate_verification_started_at = None
+            self.verification_api_outage_since = None
+            self.verification_last_progress_log = 0.0
         self.mission_stop.clear()
         self.runtime_active.clear()
         print("[Mission] back to idle", flush=True)
@@ -619,6 +663,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--recovery-turn-action", choices=("left", "right"), default="left")
     parser.add_argument("--recovery-turn-duration-sec", type=float, default=0.35)
     parser.add_argument("--recovery-turn-repetitions", type=int, default=4)
+    parser.add_argument("--verification-hard-deadline-sec", type=float, default=VERIFICATION_HARD_DEADLINE_SEC)
     return parser.parse_args()
 
 
@@ -629,7 +674,7 @@ def main() -> None:
         node = UniNaVidClientNode(args.server_url, args.instruction, args.mission_api_url,
                                   args.session_id, args.rate_hz, args.verifier_retries,
                                   args.recovery_turn_action, args.recovery_turn_duration_sec,
-                                  args.recovery_turn_repetitions)
+                                  args.recovery_turn_repetitions, args.verification_hard_deadline_sec)
     except Exception:
         if rclpy.ok():
             rclpy.shutdown()
