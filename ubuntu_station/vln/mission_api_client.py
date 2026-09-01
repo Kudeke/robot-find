@@ -9,7 +9,9 @@ from urllib.request import Request, urlopen
 
 
 class MissionApiError(RuntimeError):
-    pass
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 @dataclass(frozen=True)
@@ -24,6 +26,14 @@ class ActiveMission:
 class CandidateVerification:
     result: str
     confidence: float | None
+
+
+@dataclass(frozen=True)
+class CandidateVerificationStatus:
+    status: str
+    result: str | None = None
+    confidence: float | None = None
+    error: str = ""
 
 
 class MissionApiClient:
@@ -58,28 +68,20 @@ class MissionApiClient:
         state = response.get("state")
         return str(state).strip().lower() if state is not None else None
 
-    def verify_candidate(
-        self,
-        mission_id: str,
-        evidence: dict[str, bytes],
-    ) -> CandidateVerification:
+    def verify_candidate(self, mission_id: str, candidate_id: str,
+                         evidence: dict[str, bytes]) -> CandidateVerificationStatus:
         response = self._request_multipart(
-            "POST", f"/api/v1/missions/{mission_id}/verify-candidate", evidence
+            "POST", f"/api/v1/missions/{mission_id}/verify-candidate",
+            fields={"candidate_id": candidate_id}, files=evidence,
         )
-        if not isinstance(response, dict):
-            raise MissionApiError("verify-candidate response must be a JSON object")
-        nested = response.get("verification")
-        if isinstance(nested, dict):
-            response = nested
-        result = str(response.get("result") or response.get("verification_result") or "").strip().lower()
-        if result not in {"same_object", "different_object", "uncertain"}:
-            raise MissionApiError(f"invalid verify-candidate result: {result!r}")
-        confidence_value = response.get("confidence")
-        try:
-            confidence = float(confidence_value) if confidence_value is not None else None
-        except (TypeError, ValueError):
-            confidence = None
-        return CandidateVerification(result, confidence)
+        return self._parse_verification_status(response)
+
+    def get_candidate_verification(self, mission_id: str, candidate_id: str
+                                   ) -> CandidateVerificationStatus | None:
+        response = self._request(
+            "GET", f"/api/v1/missions/{mission_id}/verifications/{candidate_id}"
+        )
+        return None if response is None else self._parse_verification_status(response)
 
     def ack_runtime_resumed(self, mission_id: str) -> None:
         self._request("POST", f"/api/v1/missions/{mission_id}/runtime-resumed")
@@ -97,10 +99,10 @@ class MissionApiClient:
             with urlopen(request, timeout=self.timeout_sec) as response:
                 raw = response.read()
         except HTTPError as exc:
-            if method == "GET" and path.endswith("/missions/active") and exc.code == 404:
+            if method == "GET" and (path.endswith("/missions/active") or "/verifications/" in path) and exc.code == 404:
                 return None
             detail = exc.read().decode(errors="replace")[:300]
-            raise MissionApiError(f"HTTP {exc.code} for {path}: {detail}") from exc
+            raise MissionApiError(f"HTTP {exc.code} for {path}: {detail}", exc.code) from exc
         except (URLError, OSError, TimeoutError) as exc:
             raise MissionApiError(f"Mission API unavailable for {path}: {exc}") from exc
         if not raw:
@@ -110,9 +112,13 @@ class MissionApiClient:
         except json.JSONDecodeError as exc:
             raise MissionApiError(f"invalid JSON response from {path}") from exc
 
-    def _request_multipart(self, method: str, path: str, files: dict[str, bytes]) -> object:
+    def _request_multipart(self, method: str, path: str, *, fields: dict[str, str], files: dict[str, bytes]) -> object:
         boundary = f"----RobotFind{uuid4().hex}"
         parts: list[bytes] = []
+        for field_name, value in fields.items():
+            parts.extend([f"--{boundary}\r\n".encode(),
+                          f'Content-Disposition: form-data; name="{field_name}"\r\n\r\n'.encode(),
+                          str(value).encode(), b"\r\n"])
         for field_name, content in files.items():
             parts.extend(
                 [
@@ -138,7 +144,7 @@ class MissionApiClient:
                 raw = response.read()
         except HTTPError as exc:
             detail = exc.read().decode(errors="replace")[:300]
-            raise MissionApiError(f"HTTP {exc.code} for {path}: {detail}") from exc
+            raise MissionApiError(f"HTTP {exc.code} for {path}: {detail}", exc.code) from exc
         except (URLError, OSError, TimeoutError) as exc:
             raise MissionApiError(f"Mission API unavailable for {path}: {exc}") from exc
         if not raw:
@@ -147,6 +153,22 @@ class MissionApiClient:
             return json.loads(raw.decode())
         except json.JSONDecodeError as exc:
             raise MissionApiError(f"invalid JSON response from {path}") from exc
+
+    def _parse_verification_status(self, response: object) -> CandidateVerificationStatus:
+        if not isinstance(response, dict):
+            raise MissionApiError("verification response must be a JSON object")
+        nested = response.get("verification")
+        if isinstance(nested, dict): response = nested
+        status = str(response.get("status") or "").strip().lower()
+        if status not in {"processing", "completed", "failed"}:
+            if response.get("accepted") is True or response.get("queued") is True: status = "processing"
+            else: raise MissionApiError(f"invalid verification status: {status!r}")
+        value = response.get("result") or response.get("verification_result")
+        result = str(value).strip().lower() if value is not None else None
+        confidence_value = response.get("confidence")
+        try: confidence = float(confidence_value) if confidence_value is not None else None
+        except (TypeError, ValueError): confidence = None
+        return CandidateVerificationStatus(status, result, confidence, str(response.get("error") or response.get("message") or ""))
 
     def _parse_active(self, response: object) -> ActiveMission | None:
         if response is None:

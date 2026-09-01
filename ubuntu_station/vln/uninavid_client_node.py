@@ -4,6 +4,7 @@ import base64
 import json
 import threading
 import time
+from uuid import uuid4
 from collections import deque
 from typing import Any
 
@@ -18,6 +19,7 @@ from .mission_api_client import (
     ActiveMission,
     MissionApiClient,
     MissionApiError,
+    CandidateVerificationStatus,
 )
 
 CAMERA_TOPIC = "/remote/camera/color/compressed"
@@ -25,6 +27,7 @@ ACTION_TOPIC = "/vln/uninavid/actions"
 VALID_ACTIONS = {"forward", "left", "right", "stop"}
 MISSION_POLL_SEC = 1.0
 MISSION_API_FAILURE_LIMIT_SEC = 5.0
+VERIFICATION_DEADLINE_SEC = 300.0
 STOP_COMPLETION_THRESHOLD = 3
 DEFAULT_RECOVERY_TURN_ACTION = "left"
 DEFAULT_RECOVERY_TURN_DURATION_SEC = 0.35
@@ -93,6 +96,9 @@ class UniNaVidClientNode(Node):
         self.non_stop_frames: deque[bytes] = deque(maxlen=3)
         self.first_stop_frame: bytes | None = None
         self.verifier_attempts = 0
+        self.active_candidate_id: str | None = None
+        self.candidate_submission_state = "none"
+        self.candidate_verification_started_at: float | None = None
         self.runtime_resume_pending = False
         self.runtime_active = threading.Event()
         self.api_unavailable_since: float | None = None
@@ -293,6 +299,12 @@ class UniNaVidClientNode(Node):
             print(f"[Verifier] stop count={count}/{STOP_COMPLETION_THRESHOLD}{suffix}", flush=True)
             if count >= STOP_COMPLETION_THRESHOLD:
                 if self._begin_terminal("verifying", "three consecutive stop inferences"):
+                    with self.mission_lock:
+                        self.active_candidate_id = f"cand_{uuid4().hex}"
+                        self.candidate_submission_state = "pending"
+                        self.candidate_verification_started_at = time.monotonic()
+                        candidate_id = self.active_candidate_id
+                    print(f"[Verifier] candidate_id={candidate_id} created", flush=True)
                     print("[Verifier] candidate stop stable; verification pending", flush=True)
         elif previous:
             print("[Verifier] stop inference counter reset", flush=True)
@@ -439,26 +451,50 @@ class UniNaVidClientNode(Node):
         try:
             if outcome == "verifying":
                 evidence = self._candidate_evidence()
-                if evidence is None:
-                    print("[Verifier] insufficient evidence; resuming search conservatively", flush=True)
-                    self._resume_after_rejection("insufficient candidate evidence")
-                    return
-                print("[Verifier] candidate evidence ready: 3 non-stop + first-stop", flush=True)
-                self.verifier_attempts += 1
-                print("[Verifier] uploading candidate", flush=True)
-                verification = self.mission_api.verify_candidate(mission.mission_id, evidence)
                 with self.mission_lock:
-                    if self.mission_terminal != "verifying":
-                        return
+                    candidate_id = self.active_candidate_id
+                    submission_state = self.candidate_submission_state
+                    started = self.candidate_verification_started_at or time.monotonic()
+                if evidence is None or not candidate_id:
+                    raise MissionApiError("candidate evidence or candidate_id unavailable")
+                if time.monotonic() - started >= VERIFICATION_DEADLINE_SEC:
+                    raise MissionApiError("candidate verification deadline expired")
+                status = None
+                if submission_state in {"pending", "none"}:
+                    try:
+                        print(f"[Verifier] submitting candidate {candidate_id}", flush=True)
+                        status = self.mission_api.verify_candidate(mission.mission_id, candidate_id, evidence)
+                        with self.mission_lock:
+                            self.candidate_submission_state = "submitted"
+                        print(f"[Verifier] candidate {candidate_id} status={status.status}", flush=True)
+                    except MissionApiError as exc:
+                        with self.mission_lock:
+                            self.candidate_submission_state = "unknown"
+                        if exc.status_code == 409:
+                            print(f"[Verifier] POST 409; checking candidate {candidate_id}", flush=True)
+                        else:
+                            print(f"[Verifier] POST timeout/error; checking candidate {candidate_id}: {exc}", flush=True)
+                if status is None:
+                    status = self.mission_api.get_candidate_verification(mission.mission_id, candidate_id)
+                    if status is None:
+                        print(f"[Verifier] candidate {candidate_id} not found; retrying same candidate_id", flush=True)
+                        status = self.mission_api.verify_candidate(mission.mission_id, candidate_id, evidence)
+                        with self.mission_lock:
+                            self.candidate_submission_state = "submitted"
+                if status.status == "processing":
+                    print(f"[Verifier] candidate {candidate_id} status=processing", flush=True)
+                    return
+                if status.status == "failed":
+                    raise MissionApiError(status.error or "server verifier reported failed")
+                if status.result not in {"same_object", "different_object", "uncertain"}:
+                    raise MissionApiError("completed verification has no valid result")
+                print(f"[Verifier] candidate {candidate_id} status=completed result={status.result}", flush=True)
                 self.verifier_attempts = 0
-                confidence = (f" confidence={verification.confidence:.3f}"
-                              if verification.confidence is not None else "")
-                print(f"[Verifier] result={verification.result}{confidence}", flush=True)
-                if verification.result == "same_object":
+                if status.result == "same_object":
                     with self.mission_lock:
                         self.mission_terminal = "completed"
                     return
-                self._resume_after_rejection(verification.result)
+                self._resume_after_rejection(status.result)
                 return
             if outcome == "completed":
                 state = self.mission_api.ack_runtime_completed(mission.mission_id)
@@ -473,12 +509,14 @@ class UniNaVidClientNode(Node):
             with self.mission_lock:
                 if self.mission_terminal != outcome:
                     return
-            if outcome == "verifying" and self.verifier_attempts >= self.verifier_retries:
+            deadline_expired = (outcome == "verifying" and self.candidate_verification_started_at is not None
+                                and time.monotonic() - self.candidate_verification_started_at >= VERIFICATION_DEADLINE_SEC)
+            if outcome == "verifying" and (deadline_expired or self.verifier_attempts >= self.verifier_retries):
                 with self.mission_lock:
                     self.mission_terminal = "failed"
                     self.mission_terminal_error = f"candidate verification failed: {exc}"
                     self._reset_evidence_locked()
-                print(f"[Mission][ERROR] verifier unavailable after {self.verifier_attempts} attempts: {exc}", flush=True)
+                print(f"[Mission][ERROR] verifier unavailable: {exc}", flush=True)
             else:
                 print(f"[Mission][WARN] terminal acknowledgement failed: {exc}", flush=True)
             return
@@ -490,6 +528,9 @@ class UniNaVidClientNode(Node):
             self._reset_evidence_locked()
             self.runtime_resume_pending = False
             self.verifier_attempts = 0
+            self.active_candidate_id = None
+            self.candidate_submission_state = "none"
+            self.candidate_verification_started_at = None
         self.mission_stop.clear()
         self.runtime_active.clear()
         print("[Mission] back to idle", flush=True)
