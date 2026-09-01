@@ -13,15 +13,21 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
     let session = ARSession()
     @Published var hasCameraInput = false
     @Published private(set) var distanceProgress: Double = 0
+    @Published private(set) var anchorVisibilityProgress: Double = 0
+    @Published private(set) var isAnchorInView = false
     @Published private(set) var guidanceText = "Center the item to begin guided capture."
 
     private let sessionQueue = DispatchQueue(label: "com.fmt.teach", qos: .userInitiated)
-    private let targetDistanceMeters: Float = 0.45
-    private let minimumDistance: Float = 0.25
-    private let maximumDistance: Float = 0.85
+    private let targetDistanceMeters: Float = 0.40
+    private let anchorPlacementDistanceMeters: Float = 0.01
+    private let maximumCaptureDuration: TimeInterval = 15
     private var teachingAnchor: ARAnchor?
+    private var captureAnchorPosition: SIMD3<Float>?
     private var captureStartedAt: Date?
-    private var captureDuration: TimeInterval = 0
+    private var requiredAnchorVisibilityDuration: TimeInterval = 4
+    private var anchorVisibleDuration: TimeInterval = 0
+    private var lastFrameTimestamp: TimeInterval?
+    private var lastVisibilityMilestone = 0
     private var captureCompletion: ((Result<FinalizedTeachVideo, Error>) -> Void)?
     private var videoRecorder: TeachVideoRecorder?
     private var captureWorkItem: DispatchWorkItem?
@@ -49,9 +55,21 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
         sessionQueue.async { [weak self] in
             guard let self else { return }
             self.captureWorkItem?.cancel()
+            if let anchor = self.teachingAnchor {
+                self.session.remove(anchor: anchor)
+            }
+            self.teachingAnchor = nil
+            self.captureAnchorPosition = nil
             self.captureStartedAt = Date()
-            self.captureDuration = duration
+            self.requiredAnchorVisibilityDuration = duration
+            self.anchorVisibleDuration = 0
+            self.lastFrameTimestamp = nil
+            self.lastVisibilityMilestone = 0
             self.captureCompletion = completion
+            DispatchQueue.main.async {
+                self.anchorVisibilityProgress = 0
+                self.isAnchorInView = false
+            }
             do {
                 let recorder = TeachVideoRecorder()
                 try recorder.startRecording(itemID: itemID, clipIndex: clipIndex)
@@ -64,34 +82,28 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
             }
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self, self.captureStartedAt != nil else { return }
-                self.captureStartedAt = nil
-                self.videoRecorder?.finish { [weak self] result in
-                    guard let self else { return }
-                    self.sessionQueue.async {
-                        self.videoRecorder = nil
-                        let completion = self.captureCompletion
-                        self.captureCompletion = nil
-                        DispatchQueue.main.async { completion?(result) }
-                    }
-                }
+                self.finishCapture(with: self.captureTimeoutError())
             }
             self.captureWorkItem = workItem
-            self.sessionQueue.asyncAfter(deadline: .now() + duration, execute: workItem)
+            self.sessionQueue.asyncAfter(deadline: .now() + self.maximumCaptureDuration, execute: workItem)
         }
     }
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
-        if teachingAnchor == nil {
+        if captureStartedAt != nil, teachingAnchor == nil {
             placeTeachingAnchor(from: frame)
         }
-        _ = updateDistanceGuidance(from: frame)
+        let anchorVisible = updateAnchorVisibility(from: frame)
+        let distanceReady = updateDistanceGuidance(from: frame, anchorVisible: anchorVisible)
 
         guard let startedAt = captureStartedAt,
               let videoRecorder else { return }
         do {
             try videoRecorder.append(frame: frame)
-            if Date().timeIntervalSince(startedAt) >= captureDuration {
-                captureWorkItem?.perform()
+            if anchorVisibleDuration >= requiredAnchorVisibilityDuration && distanceReady {
+                finishCapture()
+            } else if Date().timeIntervalSince(startedAt) >= maximumCaptureDuration {
+                finishCapture(with: captureTimeoutError())
             }
         } catch {
             captureWorkItem?.cancel()
@@ -104,12 +116,48 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
         }
     }
 
+    private func finishCapture(with error: Error? = nil) {
+        guard captureStartedAt != nil else { return }
+        captureStartedAt = nil
+        captureWorkItem?.cancel()
+
+        if let error {
+            videoRecorder?.cancel()
+            videoRecorder = nil
+            let completion = captureCompletion
+            captureCompletion = nil
+            let visibleSeconds = String(format: "%.2f", anchorVisibleDuration)
+            let distancePercent = String(format: "%.2f", distanceProgress * 100)
+            print("[TeachVideo] capture timed out after \(maximumCaptureDuration)s visible=\(visibleSeconds)s distanceProgress=\(distancePercent)%")
+            DispatchQueue.main.async { completion?(.failure(error)) }
+            return
+        }
+
+        videoRecorder?.finish { [weak self] result in
+            guard let self else { return }
+            self.sessionQueue.async {
+                self.videoRecorder = nil
+                let completion = self.captureCompletion
+                self.captureCompletion = nil
+                DispatchQueue.main.async { completion?(result) }
+            }
+        }
+    }
+
+    private func captureTimeoutError() -> TeachVideoRecorderError {
+        if anchorVisibleDuration < requiredAnchorVisibilityDuration {
+            return .anchorVisibilityTimedOut
+        }
+        return .distanceGuidanceTimedOut
+    }
+
     func stop() {
         sessionQueue.async { [weak self] in
             if let anchor = self?.teachingAnchor {
                 self?.session.remove(anchor: anchor)
             }
             self?.teachingAnchor = nil
+            self?.captureAnchorPosition = nil
             self?.captureWorkItem?.cancel()
             self?.captureStartedAt = nil
             self?.videoRecorder?.cancel()
@@ -117,6 +165,8 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
             self?.captureCompletion = nil
             DispatchQueue.main.async {
                 self?.distanceProgress = 0
+                self?.anchorVisibilityProgress = 0
+                self?.isAnchorInView = false
                 self?.guidanceText = "Center the item to begin guided capture."
             }
             self?.session.pause()
@@ -125,48 +175,31 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
 
     private func placeTeachingAnchor(from frame: ARFrame) {
         var transform = frame.camera.transform
-        let forwardOffset = SIMD4<Float>(0, 0, -0.55, 0)
-        transform.columns.3 += transform * forwardOffset
-
-        let query = ARRaycastQuery(
-            origin: frame.camera.transform.translation,
-            direction: -frame.camera.transform.forward,
-            allowing: .estimatedPlane,
-            alignment: .horizontal
-        )
-        if let result = session.raycast(query).first {
-            transform = result.worldTransform
-        }
+        let forwardOffset = frame.camera.transform * SIMD4<Float>(0, 0, -anchorPlacementDistanceMeters, 0)
+        transform.columns.3 += forwardOffset
 
         let anchor = ARAnchor(name: "RobotFindTeachingAnchor", transform: transform)
         teachingAnchor = anchor
+        captureAnchorPosition = transform.translation
         session.add(anchor: anchor)
-        print("[TeachCapture] AR teaching anchor placed")
+        print("[TeachCapture] AR teaching anchor placed near camera distance=\(anchorPlacementDistanceMeters)m")
     }
 
-    private func updateDistanceGuidance(from frame: ARFrame) -> Bool {
-        guard let anchor = teachingAnchor else { return false }
+    private func updateDistanceGuidance(from frame: ARFrame, anchorVisible: Bool) -> Bool {
+        guard let anchorPosition = captureAnchorPosition else { return false }
         let cameraPosition = frame.camera.transform.translation
-        let anchorPosition = anchor.transform.translation
         let distance = simd_distance(cameraPosition, anchorPosition)
-        let progress = max(0, 1 - abs(distance - targetDistanceMeters) / (maximumDistance - minimumDistance))
-        let clampedProgress = min(1, progress)
+        let movedDistance = max(0, distance - anchorPlacementDistanceMeters)
+        let clampedProgress = min(1, Double(movedDistance / targetDistanceMeters))
         let text: String
-        if distance < minimumDistance {
-            text = "Move slightly farther from the item."
-        } else if distance > maximumDistance {
-            text = "Move closer to the item."
-        } else if clampedProgress < 0.7 {
-            text = "Hold the phone about one foot away."
+        if captureStartedAt != nil && !anchorVisible {
+            text = "Keep the reference point in view."
+        } else if captureStartedAt != nil && clampedProgress < 1 {
+            text = movedDistance < 0.05
+                ? "Slowly pull the phone away from the item."
+                : "Keep moving slowly around the item."
         } else if captureStartedAt != nil {
-            let horizontalOffset = cameraPosition.x - anchorPosition.x
-            if horizontalOffset < -0.08 {
-                text = "Good distance. Move slowly to the right."
-            } else if horizontalOffset > 0.08 {
-                text = "Good distance. Move slowly to the left."
-            } else {
-                text = "Good distance. Move slowly around the item."
-            }
+            text = "Good movement. Hold steady."
         } else {
             text = "Good distance. Tap capture when ready."
         }
@@ -176,7 +209,56 @@ final class TeachCameraModel: NSObject, ObservableObject, ARSessionDelegate {
             self?.guidanceText = text
         }
         speakAndHapticIfNeeded(text)
-        return clampedProgress >= 0.7
+        return clampedProgress >= 1
+    }
+
+    private func updateAnchorVisibility(from frame: ARFrame) -> Bool {
+        guard let anchorPosition = captureAnchorPosition else { return false }
+        let visible = isAnchorVisible(anchorPosition, in: frame)
+
+        if captureStartedAt != nil, let previousTimestamp = lastFrameTimestamp {
+            let delta = frame.timestamp - previousTimestamp
+            if visible, delta > 0 {
+                anchorVisibleDuration += min(delta, 0.2)
+            }
+        }
+        lastFrameTimestamp = frame.timestamp
+
+        let progress = min(1, anchorVisibleDuration / requiredAnchorVisibilityDuration)
+        let milestone = captureStartedAt == nil ? 0 : Int(progress * 2)
+        if captureStartedAt != nil, milestone > lastVisibilityMilestone {
+            lastVisibilityMilestone = milestone
+            DispatchQueue.main.async {
+                UIImpactFeedbackGenerator(style: milestone == 2 ? .medium : .light).impactOccurred()
+            }
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.isAnchorInView = visible
+            self?.anchorVisibilityProgress = progress
+        }
+        return visible
+    }
+
+    private func isAnchorVisible(_ anchorPosition: SIMD3<Float>, in frame: ARFrame) -> Bool {
+        let cameraPoint = frame.camera.transform.inverse * SIMD4<Float>(
+            anchorPosition.x,
+            anchorPosition.y,
+            anchorPosition.z,
+            1
+        )
+        guard cameraPoint.z < 0 else { return false }
+
+        let viewportSize = UIScreen.main.bounds.size
+        let screenPoint = frame.camera.projectPoint(
+            anchorPosition,
+            orientation: .portrait,
+            viewportSize: viewportSize
+        )
+        let margin: CGFloat = 24
+        return screenPoint.x >= -margin
+            && screenPoint.x <= viewportSize.width + margin
+            && screenPoint.y >= -margin
+            && screenPoint.y <= viewportSize.height + margin
     }
 
     private func speakAndHapticIfNeeded(_ text: String) {
@@ -458,7 +540,7 @@ struct TeachWizardView: View {
         "Use a contrasting background — a plain table works well.",
         "Hold the phone about one foot away.",
         "You\u{2019}ll capture 4 short guided views from different angles.",
-        "Each guided view takes about 2 seconds.",
+        "Each guided view takes at least 4 seconds with the reference point visible.",
     ]
 
     private var step2: some View {
@@ -686,6 +768,14 @@ struct TeachWizardView: View {
                     .frame(width: 150)
                     .accessibilityLabel("Distance guidance")
                     .accessibilityValue("\(Int(teachCamera.distanceProgress * 100)) percent")
+
+                if isRecording {
+                    ProgressView(value: teachCamera.anchorVisibilityProgress)
+                        .tint(teachCamera.isAnchorInView ? Color.green : Color.orange)
+                        .frame(width: 150)
+                        .accessibilityLabel("Reference point visibility")
+                        .accessibilityValue("\(Int(teachCamera.anchorVisibilityProgress * 100)) percent of the required 4 seconds")
+                }
             }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -997,7 +1087,7 @@ private struct CameraPreviewView: UIViewRepresentable {
     func makeUIView(context: Context) -> PreviewUIView { PreviewUIView(session: session) }
     func updateUIView(_ uiView: PreviewUIView, context: Context) {}
 
-    final class PreviewUIView: UIView {
+    final class PreviewUIView: UIView, ARSCNViewDelegate {
         private let sceneView: ARSCNView
 
         init(session: ARSession) {
@@ -1005,6 +1095,7 @@ private struct CameraPreviewView: UIViewRepresentable {
             super.init(frame: .zero)
             sceneView.session = session
             sceneView.scene = SCNScene()
+            sceneView.delegate = self
             sceneView.automaticallyUpdatesLighting = false
             addSubview(sceneView)
         }
@@ -1017,6 +1108,39 @@ private struct CameraPreviewView: UIViewRepresentable {
             CATransaction.setDisableActions(true)
             sceneView.frame = bounds
             CATransaction.commit()
+        }
+
+        func renderer(_ renderer: SCNSceneRenderer, nodeFor anchor: ARAnchor) -> SCNNode? {
+            guard anchor.name == "RobotFindTeachingAnchor" else { return nil }
+
+            let marker = SCNNode()
+            marker.name = "RobotFindTeachingAnchorMarker"
+
+            let center = SCNSphere(radius: 0.025)
+            center.firstMaterial = markerMaterial()
+            marker.addChildNode(SCNNode(geometry: center))
+
+            let ring = SCNTorus(ringRadius: 0.05, pipeRadius: 0.004)
+            ring.firstMaterial = markerMaterial()
+            let ringNode = SCNNode(geometry: ring)
+            ringNode.eulerAngles.x = .pi / 2
+            marker.addChildNode(ringNode)
+
+            marker.constraints = [SCNBillboardConstraint()]
+            let pulse = SCNAction.sequence([
+                SCNAction.scale(to: 1.18, duration: 0.7),
+                SCNAction.scale(to: 0.92, duration: 0.7)
+            ])
+            marker.runAction(.repeatForever(pulse), forKey: "anchorPulse")
+            return marker
+        }
+
+        private func markerMaterial() -> SCNMaterial {
+            let material = SCNMaterial()
+            material.diffuse.contents = UIColor.systemYellow
+            material.emission.contents = UIColor.systemYellow
+            material.lightingModel = .constant
+            return material
         }
     }
 }

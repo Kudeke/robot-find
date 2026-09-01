@@ -9,6 +9,8 @@ enum TeachVideoRecorderError: LocalizedError {
     case writerFailed(String)
     case noFrames
     case invalidOutput
+    case anchorVisibilityTimedOut
+    case distanceGuidanceTimedOut
 
     var errorDescription: String? {
         switch self {
@@ -22,6 +24,10 @@ enum TeachVideoRecorderError: LocalizedError {
             return "No valid AR frames were recorded."
         case .invalidOutput:
             return "The recorded video file is empty or invalid."
+        case .anchorVisibilityTimedOut:
+            return "The reference point was not visible long enough. Please try this view again."
+        case .distanceGuidanceTimedOut:
+            return "The phone did not reach the guided distance. Please try this view again."
         }
     }
 }

@@ -191,7 +191,7 @@ struct RobotMissionView: View {
 
     private func missionStateText(_ state: MissionState) -> String {
         switch state {
-        case .ready, .starting, .running: return "Searching..."
+        case .ready, .starting, .running, .verifying, .resuming: return "Searching..."
         case .stopping, .stopped: return "Stopped"
         case .failed: return "Search failed"
         case .targetFound: return "Found"

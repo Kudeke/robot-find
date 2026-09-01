@@ -4,6 +4,8 @@ enum MissionState: String, Codable, Hashable {
     case ready
     case starting
     case running
+    case verifying
+    case resuming
     case stopping
     case stopped
     case failed
@@ -13,7 +15,7 @@ enum MissionState: String, Codable, Hashable {
         switch self {
         case .targetFound, .stopped, .failed:
             return true
-        case .ready, .starting, .running, .stopping:
+        case .ready, .starting, .running, .verifying, .resuming, .stopping:
             return false
         }
     }
