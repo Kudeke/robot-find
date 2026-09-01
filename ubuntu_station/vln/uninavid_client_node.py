@@ -32,7 +32,7 @@ VERIFICATION_PROGRESS_LOG_SEC = 10.0
 STOP_COMPLETION_THRESHOLD = 3
 DEFAULT_RECOVERY_TURN_ACTION = "left"
 DEFAULT_RECOVERY_TURN_DURATION_SEC = 0.35
-DEFAULT_RECOVERY_TURN_REPETITIONS = 4
+DEFAULT_RECOVERY_TURN_REPETITIONS = 36
 DEFAULT_VERIFIER_RETRIES = 2
 
 
@@ -668,7 +668,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--verifier-retries", type=int, default=2)
     parser.add_argument("--recovery-turn-action", choices=("left", "right"), default="left")
     parser.add_argument("--recovery-turn-duration-sec", type=float, default=0.35)
-    parser.add_argument("--recovery-turn-repetitions", type=int, default=4)
+    parser.add_argument("--recovery-turn-repetitions", type=int, default=DEFAULT_RECOVERY_TURN_REPETITIONS)
     parser.add_argument("--verification-hard-deadline-sec", type=float, default=VERIFICATION_HARD_DEADLINE_SEC)
     return parser.parse_args()
 
