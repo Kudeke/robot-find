@@ -9,6 +9,8 @@ class MissionState(str, Enum):
     READY = "ready"
     STARTING = "starting"
     RUNNING = "running"
+    VERIFYING = "verifying"
+    RESUMING = "resuming"
     STOPPING = "stopping"
     STOPPED = "stopped"
     TARGET_FOUND = "target_found"

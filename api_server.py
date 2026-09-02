@@ -6,7 +6,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 from object_store import load_profile, new_object_id, save_object
-from qwen_object_service import MODEL_PATH, generate_profile, load_model
+from qwen_object_service import MODEL_PATH, generate_profile, is_model_loaded, load_model
 from schemas import ObjectProfile
 
 app = FastAPI(title="FindMyThings Object Service")
@@ -20,6 +20,7 @@ def health():
     return {
         "status": "ok",
         "model_available": Path(MODEL_PATH).is_dir(),
+        "model_loaded": is_model_loaded(),
         "model": "Qwen/Qwen3-VL-8B-Instruct",
     }
 

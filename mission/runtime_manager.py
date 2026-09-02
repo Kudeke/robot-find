@@ -5,7 +5,13 @@ from .mission_store import list_mission_ids, load_mission, save_mission
 from .schemas import Mission, MissionState
 
 logger = logging.getLogger("mission.runtime")
-ACTIVE_STATES = frozenset({MissionState.STARTING, MissionState.RUNNING, MissionState.STOPPING})
+ACTIVE_STATES = frozenset({
+    MissionState.STARTING,
+    MissionState.RUNNING,
+    MissionState.VERIFYING,
+    MissionState.RESUMING,
+    MissionState.STOPPING,
+})
 
 
 class RuntimeErrorBase(Exception):
@@ -103,23 +109,86 @@ class RuntimeManager:
             logger.info("[RuntimeManager] mission_id=%s starting -> running", mission_id)
             return mission
 
-    def runtime_completed(self, mission_id: str) -> Mission:
+    def begin_verification(self, mission_id: str) -> Mission:
         with self._lock:
             mission = self._load(mission_id)
             if mission.state != MissionState.RUNNING:
                 raise RuntimeInvalidTransition(
-                    f"runtime-completed requires state running, got {mission.state.value}"
+                    f"candidate verification requires state running, got {mission.state.value}"
+                )
+            mission.state = MissionState.VERIFYING
+            mission.error = None
+            save_mission(mission)
+            logger.info("[RuntimeManager] mission_id=%s running -> verifying", mission_id)
+            return mission
+
+    def apply_verification(self, mission_id: str, result: str) -> Mission:
+        with self._lock:
+            mission = self._load(mission_id)
+            if mission.state != MissionState.VERIFYING:
+                raise RuntimeInvalidTransition(
+                    f"verification result requires state verifying, got {mission.state.value}"
+                )
+            if result == "same_object":
+                next_state = MissionState.VERIFYING
+            elif result in {"different_object", "uncertain"}:
+                next_state = MissionState.RESUMING
+            else:
+                raise RuntimeInvalidTransition(f"unsupported verification result {result}")
+            mission.state = next_state
+            mission.error = None
+            save_mission(mission)
+            logger.info("[RuntimeManager] mission_id=%s verification=%s -> %s", mission_id, result, next_state.value)
+            return mission
+
+    def fail_verification(self, mission_id: str, error: str) -> Mission:
+        with self._lock:
+            mission = self._load(mission_id)
+            if mission.state != MissionState.VERIFYING:
+                raise RuntimeInvalidTransition(
+                    f"verification failure requires state verifying, got {mission.state.value}"
+                )
+            mission.state = MissionState.FAILED
+            mission.error = (error.strip() or "target verification failed")[:1000]
+            save_mission(mission)
+            logger.warning("[RuntimeManager] mission_id=%s -> failed", mission_id)
+            return mission
+
+    def runtime_resumed(self, mission_id: str) -> Mission:
+        with self._lock:
+            mission = self._load(mission_id)
+            if mission.state != MissionState.RESUMING:
+                raise RuntimeInvalidTransition(
+                    f"runtime-resumed requires state resuming, got {mission.state.value}"
+                )
+            mission.state = MissionState.RUNNING
+            mission.error = None
+            save_mission(mission)
+            logger.info("[RuntimeManager] mission_id=%s resuming -> running", mission_id)
+            return mission
+
+    def runtime_completed(self, mission_id: str) -> Mission:
+        with self._lock:
+            mission = self._load(mission_id)
+            if mission.state not in {MissionState.RUNNING, MissionState.VERIFYING}:
+                raise RuntimeInvalidTransition(
+                    f"runtime-completed requires state running or verifying, got {mission.state.value}"
                 )
             mission.state = MissionState.TARGET_FOUND
             mission.error = None
             save_mission(mission)
-            logger.info("[RuntimeManager] mission_id=%s running -> target_found", mission_id)
+            logger.info("[RuntimeManager] mission_id=%s -> target_found", mission_id)
             return mission
 
     def stop(self, mission_id: str) -> Mission:
         with self._lock:
             mission = self._load(mission_id)
-            if mission.state not in {MissionState.STARTING, MissionState.RUNNING}:
+            if mission.state not in {
+                MissionState.STARTING,
+                MissionState.RUNNING,
+                MissionState.VERIFYING,
+                MissionState.RESUMING,
+            }:
                 raise RuntimeInvalidTransition(f"mission cannot stop from state {mission.state.value}")
             mission.state = MissionState.STOPPING
             mission.error = None

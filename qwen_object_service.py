@@ -108,6 +108,10 @@ def load_model():
     return _model, _processor
 
 
+def is_model_loaded():
+    return _model is not None and _processor is not None
+
+
 def _messages(video_paths, prompt):
     return [{
         "role": "user",
