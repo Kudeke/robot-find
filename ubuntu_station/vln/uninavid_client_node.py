@@ -95,6 +95,8 @@ class UniNaVidClientNode(Node):
         self.mission_lock = threading.Lock()
         self.active_mission: ActiveMission | None = None
         self.runtime_instruction = ""
+        self.local_phase = "idle"
+        self.recovery_cycle = 0
         self.mission_terminal: str | None = None
         self.mission_terminal_error = ""
         self.consecutive_stop_inferences = 0
@@ -187,6 +189,10 @@ class UniNaVidClientNode(Node):
                                 await asyncio.to_thread(self.mission_api.ack_runtime_resumed, mission_id)
                                 self.runtime_resume_pending = False
                                 print("[Mission] runtime-resumed acknowledged", flush=True)
+                                with self.mission_lock:
+                                    resume_cycle = self.recovery_cycle
+                                    self.local_phase = "running"
+                                print(f"[Recovery] cycle={resume_cycle} cleanup complete", flush=True)
                                 print("[Mission] search resumed", flush=True)
                             else:
                                 await asyncio.to_thread(self.mission_api.ack_runtime_started, mission_id)
@@ -197,6 +203,8 @@ class UniNaVidClientNode(Node):
                         if self.mission_stop.is_set():
                             break
                         self.runtime_active.set()
+                        with self.mission_lock:
+                            self.local_phase = "running"
                     self.connected.set()
                     print("[VLN] connected", flush=True)
                     while not self.stop_requested.is_set():
@@ -312,6 +320,7 @@ class UniNaVidClientNode(Node):
                         self.active_candidate_id = f"cand_{uuid4().hex}"
                         self.candidate_submission_state = "pending"
                         self.candidate_verification_started_at = time.monotonic()
+                        self.local_phase = "verifying"
                         candidate_id = self.active_candidate_id
                     else:
                         candidate_id = None
@@ -375,6 +384,11 @@ class UniNaVidClientNode(Node):
                     and terminal in {"verifying", "recovering"}):
                 if self._begin_terminal("stopped", "server requested stop"):
                     print("[Mission] manual stop wins over candidate verification", flush=True)
+            elif (active is not None and current is not None
+                  and active.mission_id == current.mission_id
+                  and active.state == "resuming"
+                  and terminal == "recovering"):
+                print("[Mission] server_state=resuming local_phase=recovering", flush=True)
             return
         if current is None:
             if active is None:
@@ -389,6 +403,7 @@ class UniNaVidClientNode(Node):
             with self.mission_lock:
                 self.active_mission = active
                 self.runtime_instruction = active.navigation_instruction
+                self.local_phase = "starting"
                 self._reset_evidence_locked()
             print(f"[Mission] active mission detected mission_id={active.mission_id}", flush=True)
             print(f"[Mission] object_id={active.object_id} instruction="
@@ -405,6 +420,8 @@ class UniNaVidClientNode(Node):
         elif active.state == "stopping":
             print("[Mission] stop requested", flush=True)
             self._begin_terminal("stopped", "server requested stop")
+        elif active.state == "resuming" and (self.local_phase == "recovering" or self.runtime_resume_pending):
+            print("[Mission] server_state=resuming local_phase=recovering", flush=True)
         elif active.state not in {"starting", "running"}:
             self._begin_terminal("failed", f"unexpected mission state={active.state}")
 
@@ -459,6 +476,12 @@ class UniNaVidClientNode(Node):
                 if not (outcome == "stopped" and self.mission_terminal in {"verifying", "recovering"}):
                     return False
             self.mission_terminal, self.mission_terminal_error = outcome, error
+            if outcome == "verifying":
+                self.local_phase = "verifying"
+            elif outcome == "stopped":
+                self.local_phase = "stopping"
+            elif outcome == "failed":
+                self.local_phase = "failed"
             if outcome in {"stopped", "failed"}:
                 self._reset_evidence_locked()
         self.runtime_active.clear()
@@ -579,6 +602,7 @@ class UniNaVidClientNode(Node):
             self.active_candidate_id = None
             self.candidate_submission_state = "none"
             self.candidate_verification_started_at = None
+            self.local_phase = "idle"
             self.verification_api_outage_since = None
             self.verification_last_progress_log = 0.0
         self.mission_stop.clear()
@@ -592,6 +616,11 @@ class UniNaVidClientNode(Node):
         with self.mission_lock:
             if self.mission_terminal == "verifying":
                 self.mission_terminal = "recovering"
+            self.local_phase = "recovering"
+            self.recovery_cycle += 1
+            cycle = self.recovery_cycle
+            candidate_id = self.active_candidate_id
+        print(f"[Recovery] cycle={cycle} candidate={candidate_id} begin", flush=True)
         print(f"[Mission] candidate rejected reason={reason}", flush=True)
         print(f"[Mission] recovery start action={self.recovery_turn_action} "
               f"repetitions={self.recovery_turn_repetitions}", flush=True)
@@ -601,6 +630,7 @@ class UniNaVidClientNode(Node):
             self.stop_requested.wait(self.recovery_turn_duration_sec)
         self._publish_stop_action()
         self.stop_requested.wait(0.1)
+        print(f"[Recovery] cycle={cycle} maneuver complete", flush=True)
 
         try:
             active = self.mission_api.get_active_mission()
@@ -621,13 +651,17 @@ class UniNaVidClientNode(Node):
                 + canonical
             )
             self._reset_evidence_locked()
+            self.active_candidate_id = None
+            self.candidate_submission_state = "none"
+            self.candidate_verification_started_at = None
+            self.verifier_attempts = 0
             self.runtime_resume_pending = True
             self.mission_terminal = None
             self.mission_terminal_error = ""
         self.mission_stop.clear()
         self.session_closed.set()
         self.mission_wakeup.set()
-        print("[Mission] Uni-NaVid session reset", flush=True)
+        print(f"[Recovery] cycle={cycle} recovery complete; new session pending", flush=True)
 
     def stop(self) -> None:
         if self.mission_mode and self._mission_id() is not None:
