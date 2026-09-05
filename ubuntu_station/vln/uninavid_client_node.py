@@ -33,6 +33,12 @@ STOP_COMPLETION_THRESHOLD = 3
 DEFAULT_RECOVERY_TURN_ACTION = "left"
 DEFAULT_RECOVERY_TURN_DURATION_SEC = 0.35
 DEFAULT_RECOVERY_TURN_REPETITIONS = 36
+RECOVERY_POST_TURN_ACTIONS = (
+    "right", "right", "forward", "forward",
+    "forward", "forward", "left", "left",
+    "forward", "forward", "forward", "forward",
+    "forward", "forward", "forward", "forward",
+)
 DEFAULT_VERIFIER_RETRIES = 2
 
 
@@ -624,9 +630,12 @@ class UniNaVidClientNode(Node):
         print(f"[Mission] candidate rejected reason={reason}", flush=True)
         print(f"[Mission] recovery start action={self.recovery_turn_action} "
               f"repetitions={self.recovery_turn_repetitions}", flush=True)
-        for _ in range(self.recovery_turn_repetitions):
+        recovery_actions = ([self.recovery_turn_action] * self.recovery_turn_repetitions
+                            + list(RECOVERY_POST_TURN_ACTIONS))
+        print(f"[Recovery] action sequence length={len(recovery_actions)}", flush=True)
+        for action in recovery_actions:
             self._publish_actions({"frame_seq": self._next_frame_seq(),
-                                   "actions": [self.recovery_turn_action]})
+                                   "actions": [action]})
             self.stop_requested.wait(self.recovery_turn_duration_sec)
         self._publish_stop_action()
         self.stop_requested.wait(0.1)
